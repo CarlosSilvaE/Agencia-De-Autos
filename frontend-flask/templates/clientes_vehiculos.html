@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Clientes y vehículos</h1>
+<div class="entity-grid">
+  <section class="card wide-card">
+    <h2>{{ "Editar cliente" if customer else "Nuevo cliente" }}</h2>
+    <form method="post" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="cliente">
+      {% if customer %}<input type="hidden" name="id" value="{{ customer.id_cliente }}">{% endif %}
+      <label>Nombre<input name="nombre" required value="{{ customer.nombre if customer else '' }}"></label>
+      <label>Apellido paterno<input name="apellido_paterno" required value="{{ customer.apellido_paterno if customer else '' }}"></label>
+      <label>Apellido materno<input name="apellido_materno" value="{{ customer.apellido_materno if customer else '' }}"></label>
+      <label>Teléfono<input name="telefono" value="{{ customer.telefono if customer else '' }}"></label>
+      <label>Correo<input type="email" name="email" value="{{ customer.email if customer else '' }}"></label>
+      <button>Guardar cliente</button>
+      {% if customer %}<a href="{{ url_for('entidades.manage') }}">Cancelar</a>{% endif %}
+    </form>
+  </section>
+
+  <section class="card wide-card">
+    <h2>{{ "Editar vehículo" if vehicle else "Nuevo vehículo" }}</h2>
+    <form method="post" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="vehiculo">
+      {% if vehicle %}<input type="hidden" name="id" value="{{ vehicle.id_vehiculo }}">{% endif %}
+      <label>Propietario
+        <select name="id_cliente" required>
+          <option value="">Seleccione</option>
+          {% for item in customers %}
+          <option value="{{ item.id_cliente }}" {{ "selected" if vehicle and vehicle.id_cliente == item.id_cliente }}>{{ item.nombre }} {{ item.apellido_paterno }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Marca
+        <select name="id_marca" required><option value="">Seleccione</option>
+          {% for item in brands %}<option value="{{ item.id_marca }}" {{ "selected" if vehicle and vehicle.id_marca == item.id_marca }}>{{ item.nombre }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Modelo
+        <select name="id_modelo" required><option value="">Seleccione</option>
+          {% for item in models %}<option value="{{ item.id_modelo }}" {{ "selected" if vehicle and vehicle.id_modelo == item.id_modelo }}>{{ item.nombre }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Año
+        <select name="id_ano" required><option value="">Seleccione</option>
+          {% for item in years %}<option value="{{ item.id_ano }}" {{ "selected" if vehicle and vehicle.id_ano == item.id_ano }}>{{ item.ano }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Placas<input name="placas" required value="{{ vehicle.placas if vehicle else '' }}"></label>
+      <label>Color<input name="color" value="{{ vehicle.color if vehicle else '' }}"></label>
+      <label>VIN<input name="vin" value="{{ vehicle.vin if vehicle else '' }}"></label>
+      <button>Guardar vehículo</button>
+      {% if vehicle %}<a href="{{ url_for('entidades.manage') }}">Cancelar</a>{% endif %}
+    </form>
+  </section>
+</div>
+
+<h2>Clientes registrados</h2>
+<table>
+  <thead><tr><th>Nombre</th><th>Teléfono</th><th>Correo</th><th>Acciones</th></tr></thead>
+  <tbody>{% for item in customers %}
+    <tr>
+      <td>{{ item.nombre }} {{ item.apellido_paterno }} {{ item.apellido_materno or '' }}</td>
+      <td>{{ item.telefono or '' }}</td><td>{{ item.email or '' }}</td>
+      <td class="actions">
+        <a href="{{ url_for('entidades.manage', editar_cliente=item.id_cliente) }}">Editar</a>
+        <form method="post" onsubmit="return confirm('¿Desactivar este cliente?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete_cliente"><input type="hidden" name="id" value="{{ item.id_cliente }}">
+          <button class="danger-button">Desactivar</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}<tr><td colspan="4">No hay clientes.</td></tr>{% endfor %}</tbody>
+</table>
+
+<h2>Vehículos registrados</h2>
+<table>
+  <thead><tr><th>Placas</th><th>Vehículo</th><th>Propietario</th><th>Acciones</th></tr></thead>
+  <tbody>{% for item in vehicles %}
+    <tr>
+      <td>{{ item.placas }}</td><td>{{ item.ano }} {{ item.marca }} {{ item.modelo }} · {{ item.color or '' }}</td>
+      <td>{{ item.nombre }} {{ item.apellido_paterno }}</td>
+      <td class="actions">
+        <a href="{{ url_for('entidades.manage', editar_vehiculo=item.id_vehiculo) }}">Editar</a>
+        <form method="post" onsubmit="return confirm('¿Desactivar este vehículo?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete_vehiculo"><input type="hidden" name="id" value="{{ item.id_vehiculo }}">
+          <button class="danger-button">Desactivar</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}<tr><td colspan="4">No hay vehículos.</td></tr>{% endfor %}</tbody>
+</table>
+{% endblock %}

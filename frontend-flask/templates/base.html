@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Agencia de automóviles{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+{% if session.get('user') %}
+<nav>
+  <strong>Agencia</strong>
+  <a href="{{ url_for('dashboard.dashboard') }}">Dashboard</a>
+  <a href="{{ url_for('servicios.services') }}">Servicios</a>
+  <a href="{{ url_for('servicios.upcoming') }}">Próximos servicios</a>
+  <a href="{{ url_for('catalogos.catalogs') }}">Catálogos</a>
+  <a href="{{ url_for('entidades.manage') }}">Clientes y vehículos</a>
+  <a href="{{ url_for('administradores.admins') }}">Administradores</a>
+  <form class="logout" method="post" action="{{ url_for('auth.logout') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="link-button" type="submit">Cerrar sesión</button>
+  </form>
+</nav>
+{% endif %}
+<main>
+  {% for category, message in get_flashed_messages(with_categories=true) %}
+  <div class="alert {{ category }}">{{ message }}</div>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Administradores</h1>
+<section class="card wide-card">
+  <h2>{{ "Editar administrador" if editing else "Agregar administrador" }}</h2>
+  <form method="post" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if editing %}<input type="hidden" name="id" value="{{ editing.id_administrador }}">{% endif %}
+    <label>Nombre<input name="nombre" required value="{{ editing.nombre if editing else '' }}"></label>
+    <label>Usuario<input name="usuario" required value="{{ editing.usuario if editing else '' }}"></label>
+    <label>Contraseña (mínimo 8 caracteres; vacía conserva la actual)
+      <input name="password" type="password" {{ "required" if not editing }} minlength="8">
+    </label>
+    <label>Activo
+      <select name="activo"><option value="1" {{ "selected" if not editing or editing.activo }}>Sí</option><option value="0" {{ "selected" if editing and not editing.activo }}>No</option></select>
+    </label>
+    <button>Guardar</button>
+    {% if editing %}<a href="{{ url_for('administradores.admins') }}">Cancelar</a>{% endif %}
+  </form>
+</section>
+<table>
+  <thead><tr><th>Nombre</th><th>Usuario</th><th>Estado</th><th>Acciones</th></tr></thead>
+  <tbody>
+  {% for item in administrators %}
+  <tr>
+    <td>{{ item.nombre }}</td><td>{{ item.usuario }}</td><td>{{ "Activo" if item.activo else "Inactivo" }}</td>
+    <td class="actions">
+      <a href="{{ url_for('administradores.admins', editar=item.id_administrador) }}">Editar</a>
+      {% if item.activo %}
+      <form method="post" onsubmit="return confirm('¿Desactivar este administrador?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="delete">
+        <input type="hidden" name="id" value="{{ item.id_administrador }}">
+        <button class="danger-button">Desactivar</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

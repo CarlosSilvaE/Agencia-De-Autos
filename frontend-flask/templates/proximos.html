@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Próximos servicios programados</h1>
+<form class="filters">
+  <input name="folio" placeholder="Folio" value="{{ request.args.get('folio', '') }}">
+  <input name="propietario" placeholder="Propietario" value="{{ request.args.get('propietario', '') }}">
+  <button>Buscar</button>
+</form>
+<table>
+  <thead><tr><th>Fecha</th><th>Folio</th><th>Propietario</th><th>Placas</th><th>Kilometraje</th><th>Notas</th></tr></thead>
+  <tbody>
+  {% for item in upcoming %}
+  <tr><td>{{ item.fecha_programada }}</td><td>{{ item.folio }}</td><td>{{ item.nombre }} {{ item.apellido_paterno }} {{ item.apellido_materno or '' }}</td><td>{{ item.placas }}</td><td>{{ item.kilometraje or '' }}</td><td>{{ item.notas or '' }}</td></tr>
+  {% else %}
+  <tr><td colspan="6">No hay próximos servicios registrados.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

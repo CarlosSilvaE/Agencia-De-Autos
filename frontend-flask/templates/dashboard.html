@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Dashboard</h1>
+<form method="get">
+  <label>Día
+    <input type="date" name="date" value="{{ selected_date }}">
+  </label>
+  <select name="filter" onchange="this.form.submit()">
+    <option value="total" {{ "selected" if filter_value == "total" }}>Total</option>
+    <option value="daily" {{ "selected" if filter_value == "daily" }}>Hoy</option>
+  </select>
+  <button>Aplicar</button>
+</form>
+<canvas id="serviceChart"></canvas>
+<script>
+const dashboardData = {{ data | tojson }};
+new Chart(document.getElementById("serviceChart"), {
+  type: "doughnut",
+  data: {
+    labels: dashboardData.map(item => item.estado),
+    datasets: [{ data: dashboardData.map(item => item.cantidad), backgroundColor: ["#f59e0b", "#3b82f6", "#22c55e"] }]
+  }
+});
+</script>
+{% endblock %}
