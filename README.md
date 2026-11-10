@@ -1,58 +1,68 @@
-# Agencia de Automóviles — Mantenimiento
+# Agencia de Automóviles
 
-Aplicación MVC para registrar y consultar mantenimiento preventivo y correctivo:
-Flask (vistas/controladores) → API MVC ASP.NET Core 8 → MySQL 8.4.
+Aplicación de escritorio hecha con **Python + PySide6** y organizada con
+arquitectura MVC. La app se conecta directamente desde Python a MySQL 8.4, que
+se ejecuta en Docker. No requiere API web ni backend en otro lenguaje.
 
-## Inicio con Docker
+## Requisitos
 
-1. Copia `.env.example` como `.env`.
-2. Cambia `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`, `FLASK_SECRET_KEY` y
-   `ADMIN_INITIAL_PASSWORD` antes de usar datos reales.
-3. Ejecuta `docker compose up -d --build`.
-4. Abre <http://localhost:8080>.
-5. En una base nueva, el usuario inicial es `admin` y la contraseña es la que
-   configuraste en `ADMIN_INITIAL_PASSWORD` (por omisión, `admin123`).
+- Docker Desktop con Docker Compose.
+- Python 3.10 o posterior.
 
-La API C# solo es accesible en la red privada de Compose. La aplicación web se
-publica en `8080`; MySQL se publica en el puerto host `3307`. Los datos se
-conservan en el volumen `mysql_data`.
+## Inicio
 
-## Funcionalidad
+1. Copia `.env.example` como `.env` y configura contraseñas propias para MySQL
+   y el administrador inicial antes de usar datos reales.
+2. Inicia MySQL: `docker compose up -d`.
+3. Desde la raíz del proyecto, instala dependencias y ejecuta la aplicación:
 
-- Login administrativo; contraseñas almacenadas con el hasher de ASP.NET Core.
-- Administración de usuarios administradores, con contraseña opcional al editar
-  y protección contra desactivar al último administrador.
-- CRUD de marcas, modelos, años y refacciones. Los estados de servicio se
-  mantienen como los tres valores operacionales requeridos.
-- CRUD de clientes y vehículos, además de su captura desde el registro del
-  servicio.
-- Alta, consulta por folio o propietario, modificación, cambio de estado y
-  eliminación de servicios.
-- Clasificación del mantenimiento como preventivo o correctivo.
-- Captura del propietario, vehículo, descripción, costo y persona que entrega.
-- Asociación de varias refacciones a un servicio, controlando existencias en la
-  misma transacción de base de datos.
-- Registro y consulta de próximos servicios por folio o propietario.
-- Comprobante HTML imprimible con los datos básicos del registro y recepción.
-- Dashboard Chart.js por estado, con filtro por fecha elegida o por el total.
-- Sesión Flask con cookies HttpOnly/SameSite, protección CSRF y cierre de sesión.
+   ```powershell
+   python -m pip install -r requirements.txt
+   python main.py
+   ```
 
-## Patrones y modelo
+4. Inicia sesión con `ADMIN_INITIAL_USERNAME` y `ADMIN_INITIAL_PASSWORD` del
+   archivo `.env`. En una instalación nueva, el usuario predeterminado es
+   `admin`; cambia la contraseña de ejemplo antes de utilizar la aplicación.
 
-- **Singleton:** `DatabaseConnection` registrado como singleton en el contenedor
-  de ASP.NET Core.
-- **Strategy:** estrategias intercambiables de consulta total y diaria del
-  dashboard.
-- El esquema relacional está en `database/init.sql`: administradores, clientes,
-  vehículos, marcas, modelos, años, servicios, estados, entregas, refacciones,
-  relación servicio-refacción y próximos servicios.
+La conexión de la aplicación usa `MYSQL_HOST` y `MYSQL_PORT`; por defecto
+MySQL está disponible solo en el equipo local, en el puerto `3307`. Los datos
+se conservan en el volumen Docker `mysql_data`.
 
-El usuario inicial solo se crea cuando no hay administradores; cambiar las
-variables del `.env` después de que ya exista no cambia la contraseña existente.
-Para cambiarla, inicia sesión y usa la sección **Administradores**.
+Para detener los contenedores: `docker compose down`. Para borrar también los
+datos guardados, usa `docker compose down -v`.
 
-## Evidencia de entrega por equipo
+## Módulos
 
-La participación en GitHub (commits, push y merge de cada integrante) y el
-documento con nombres y responsabilidades asignadas deben agregarse al
-repositorio real del equipo. No se inventan esos datos dentro de este proyecto.
+- Inicio de sesión administrativo.
+- Resumen de servicios por estado, total o fecha.
+- Alta, consulta, edición, cambio de estado, comprobante y eliminación de
+  servicios.
+- Captura de entregas, refacciones y próximos servicios asociados; el inventario
+  de refacciones se actualiza en una transacción MySQL.
+- Consulta de próximos servicios por folio o propietario.
+- Administración de clientes y vehículos.
+- Catálogos de marcas, modelos, años y refacciones.
+- Administración de usuarios administradores.
+
+## Arquitectura
+
+- `main.py`: punto de entrada y composición de dependencias.
+- `models/`: operaciones de negocio y acceso directo a MySQL.
+- `controllers/`: coordinación de autenticación y módulos de negocio entre
+  modelo y vistas.
+- `views/`: ventanas, páginas, formularios y tema PySide6.
+- `tests/`: pruebas del flujo modelo-controlador.
+- `database/`: esquema inicial de MySQL.
+- `docker-compose.yml`: contenedor de MySQL.
+
+La aplicación de escritorio sigue MVC: las vistas presentan datos y capturan
+acciones; los controladores coordinan los casos de uso; y los modelos validan
+las operaciones y persisten en MySQL mediante el componente de base de datos.
+El usuario administrador inicial solo se crea cuando la base de datos no
+contiene administradores. Cambiar las variables del `.env` después de que ya
+exista no cambia la contraseña guardada; usa **Administradores** para
+modificarla.
+
+Para ejecutar las pruebas MVC desde la raíz:
+`python -m unittest discover -s tests -v`.
