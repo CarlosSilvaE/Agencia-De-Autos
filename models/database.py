@@ -57,10 +57,10 @@ class MySQLDatabase:
     @staticmethod
     def translate_error(error: MySQLError) -> DataAccessError:
         messages = {
-            1062: "El registro ya existe; revisa los valores únicos.",
+            1062: "El registro ya existe; revisa los valores unicos.",
             1451: "No se puede desactivar o eliminar porque hay registros asociados.",
-            1452: "Una referencia seleccionada no existe o no es válida.",
+            1452: "Una referencia seleccionada no existe o no es valida.",
         }
-        message = messages.get(error.errno, "Ocurrió un error al acceder a MySQL.")
+        message = messages.get(error.errno, "Ocurrio un error al acceder a MySQL.")
         return DataAccessError(f"{message} ({error})")
 

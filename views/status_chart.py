@@ -1,4 +1,4 @@
-"""Gráfica real, responsive y sin dependencias extra usando QPainter/Qt."""
+"""Grafica real, responsive y sin dependencias extra usando QPainter/Qt."""
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt
@@ -17,7 +17,7 @@ class StatusBarChart(QWidget):
         super().__init__(parent)
         self._counts: dict[str, int] = {}
         self.setMinimumHeight(215)
-        self.setAccessibleName("Gráfica de barras de servicios por estado")
+        self.setAccessibleName("Grafica de barras de servicios por estado")
 
     def set_counts(self, counts: dict[str, int]) -> None:
         self._counts = {name: max(0, int(counts.get(name, 0))) for name, _ in self.STATES}

@@ -7,7 +7,7 @@ from datetime import date
 class DashboardQueryStrategy(ABC):
     @abstractmethod
     def build(self, day: str | None = None) -> tuple[str, tuple]:
-        """Devuelve SQL parametrizado y sus parámetros."""
+        """Devuelve SQL parametrizado y sus parametros."""
 
 
 class TotalDashboardStrategy(DashboardQueryStrategy):
@@ -24,7 +24,7 @@ class TotalDashboardStrategy(DashboardQueryStrategy):
 class DailyDashboardStrategy(DashboardQueryStrategy):
     def build(self, day: str | None = None) -> tuple[str, tuple]:
         if not day:
-            raise ValueError("Selecciona una fecha para consultar servicios por día.")
+            raise ValueError("Selecciona una fecha para consultar servicios por dia.")
         try:
             date.fromisoformat(day)
         except ValueError as error:

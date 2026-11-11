@@ -1,6 +1,6 @@
-"""Singleton: una instancia de proveedor; conexiones MySQL independientes por operación.
+"""Singleton: una instancia de proveedor; conexiones MySQL independientes por operacion.
 
-No se comparte una conexión/cursor entre sesiones (evita transacciones cruzadas).
+No se comparte una conexion/cursor entre sesiones (evita transacciones cruzadas).
 """
 from __future__ import annotations
 
@@ -22,5 +22,5 @@ class DatabaseProvider:
 
     @property
     def database(self) -> MySQLDatabase:
-        """MySQLDatabase crea y cierra cada conexión mediante session()."""
+        """MySQLDatabase crea y cierra cada conexion mediante session()."""
         return self._database

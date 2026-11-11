@@ -18,7 +18,7 @@ from views.theme import apply_theme
 def main() -> int:
     load_dotenv(Path(__file__).resolve().parent / ".env")
     application = QApplication(sys.argv)
-    application.setApplicationName("Agencia de Automóviles")
+    application.setApplicationName("Agencia de Automoviles")
     apply_theme(application)
     application.setFont(QFont("Segoe UI", 10))
     model = AgencyModel(DatabaseProvider().database)

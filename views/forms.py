@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from typing import Any
 
@@ -16,7 +17,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QSizePolicy,
     QSpinBox,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -37,14 +40,18 @@ def optional_text(value: str) -> str | None:
     return value.strip() or None
 
 
-def add_buttons(dialog: QDialog, layout: QVBoxLayout) -> None:
+def add_buttons(
+    dialog: QDialog,
+    layout: QVBoxLayout,
+    on_save: Callable[[], None] | None = None,
+) -> None:
     buttons = QDialogButtonBox(
         QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
     )
     buttons.button(QDialogButtonBox.StandardButton.Save).setText("Guardar")
     set_primary_button(buttons.button(QDialogButtonBox.StandardButton.Save))
     buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
-    buttons.accepted.connect(dialog.accept)
+    buttons.accepted.connect(on_save if on_save is not None else dialog.accept)
     buttons.rejected.connect(dialog.reject)
     layout.addWidget(buttons)
 
@@ -61,7 +68,7 @@ class CustomerDialog(QDialog):
             ("nombre", "Nombre"),
             ("apellido_paterno", "Apellido paterno"),
             ("apellido_materno", "Apellido materno"),
-            ("telefono", "Teléfono"),
+            ("telefono", "Telefono"),
             ("email", "Email"),
         ):
             field = QLineEdit(str((record or {}).get(key) or ""))
@@ -89,7 +96,7 @@ class VehicleDialog(QDialog):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Editar vehículo" if record else "Nuevo vehículo")
+        self.setWindowTitle("Editar vehiculo" if record else "Nuevo vehiculo")
         layout = QVBoxLayout(self)
         form = QFormLayout()
         self.customer = QComboBox()
@@ -106,15 +113,15 @@ class VehicleDialog(QDialog):
         self.all_models = catalogs["modelos"]
         self.brand.currentIndexChanged.connect(self.filter_models)
         self.year = QComboBox()
-        for item in catalogs["anos"]:
-            self.year.addItem(str(item["ano"]), item["id_ano"])
+        for item in catalogs["anio"]:
+            self.year.addItem(str(item["anio"]), item["id_anio"])
         self.plates = QLineEdit(str((record or {}).get("placas") or ""))
         self.color = QLineEdit(str((record or {}).get("color") or ""))
         self.vin = QLineEdit(str((record or {}).get("vin") or ""))
         form.addRow("Cliente:", self.customer)
         form.addRow("Marca:", self.brand)
         form.addRow("Modelo:", self.model)
-        form.addRow("Año:", self.year)
+        form.addRow("Anio:", self.year)
         form.addRow("Placas:", self.plates)
         form.addRow("Color:", self.color)
         form.addRow("VIN:", self.vin)
@@ -125,7 +132,7 @@ class VehicleDialog(QDialog):
             set_combo_id(self.brand, record.get("id_marca"))
             self.filter_models()
             set_combo_id(self.model, record.get("id_modelo"))
-            set_combo_id(self.year, record.get("id_ano"))
+            set_combo_id(self.year, record.get("id_anio"))
         else:
             self.filter_models()
 
@@ -143,7 +150,7 @@ class VehicleDialog(QDialog):
             "idCliente": self.customer.currentData(),
             "idMarca": self.brand.currentData(),
             "idModelo": self.model.currentData(),
-            "idAno": self.year.currentData(),
+            "idAnio": self.year.currentData(),
             "placas": self.plates.text().strip(),
             "color": optional_text(self.color.text()),
             "vin": optional_text(self.vin.text()),
@@ -186,12 +193,12 @@ class CatalogItemDialog(QDialog):
             price.setValue(float((record or {}).get("precio") or 0))
             self.fields["precio"] = price
             form.addRow("Precio:", price)
-        elif catalog == "anos":
+        elif catalog == "anio":
             year = QSpinBox()
             year.setRange(1886, date.today().year + 5)
-            year.setValue(int((record or {}).get("ano") or date.today().year))
-            self.fields["ano"] = year
-            form.addRow("Año:", year)
+            year.setValue(int((record or {}).get("anio") or date.today().year))
+            self.fields["anio"] = year
+            form.addRow("Anio:", year)
         else:
             self._add_text(form, "nombre", "Nombre", record)
         layout.addLayout(form)
@@ -227,7 +234,13 @@ class CatalogItemDialog(QDialog):
 
 
 class AdminDialog(QDialog):
-    def __init__(self, record: dict[str, Any] | None = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        record: dict[str, Any] | None = None,
+        parent: QWidget | None = None,
+        *,
+        on_save: Callable[[], None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.record = record
         self.setWindowTitle("Editar administrador" if record else "Nuevo administrador")
@@ -237,15 +250,17 @@ class AdminDialog(QDialog):
         self.username = QLineEdit(str((record or {}).get("usuario") or ""))
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password.setPlaceholderText("Dejar vacío para conservar")
+        self.password.setPlaceholderText(
+            "Dejar vacio para conservar" if record else "Minimo 8 caracteres"
+        )
         form.addRow("Nombre:", self.name)
         form.addRow("Usuario:", self.username)
-        form.addRow("Contraseña:", self.password)
+        form.addRow("Contrasena:", self.password)
         layout.addLayout(form)
         self.active = QCheckBox("Activo")
         self.active.setChecked(bool((record or {}).get("activo", True)))
         layout.addWidget(self.active)
-        add_buttons(self, layout)
+        add_buttons(self, layout, on_save)
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -264,14 +279,29 @@ class ServiceDialog(QDialog):
         record: dict[str, Any] | None = None,
         existing_parts: list[dict[str, Any]] | None = None,
         parent: QWidget | None = None,
+        *,
+        on_save: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.record = record
         self.vehicles = vehicles
         self.parts = parts
         self.setWindowTitle("Editar servicio" if record else "Nuevo servicio")
-        self.resize(760, 760)
+        self.resize(960, 700)
+        self.setMinimumSize(760, 560)
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
         layout = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs, 1)
+        service_page = QWidget()
+        service_layout = QVBoxLayout(service_page)
+        parts_page = QWidget()
+        parts_layout = QVBoxLayout(parts_page)
+        delivery_page = QWidget()
+        delivery_layout = QVBoxLayout(delivery_page)
+        self.tabs.addTab(service_page, "Servicio")
+        self.tabs.addTab(parts_page, "Refacciones")
+        self.tabs.addTab(delivery_page, "Recepcion")
         form = QFormLayout()
         self.vehicle = QComboBox()
         for item in self.vehicles:
@@ -293,34 +323,54 @@ class ServiceDialog(QDialog):
         self.folio = QLineEdit(str((record or {}).get("folio") or ""))
         if record:
             self.folio.setReadOnly(True)
-        form.addRow("Vehículo:", self.vehicle)
+        form.addRow("Vehiculo:", self.vehicle)
         if not record:
             form.addRow("Folio (opcional):", self.folio)
         form.addRow("Tipo:", self.kind)
         form.addRow("Estado:", self.status)
         form.addRow("Costo:", self.cost)
-        form.addRow("Descripción:", self.description)
-        layout.addLayout(form)
+        form.addRow("Descripcion:", self.description)
+        service_layout.addLayout(form)
 
         delivery = QFormLayout()
         self.deliverer = QLineEdit(str((record or {}).get("nombre_entrega") or ""))
+        self.deliverer.setPlaceholderText("Nombre de quien trae el vehiculo a la agencia")
         self.delivery_phone = QLineEdit(str((record or {}).get("telefono_entrega") or ""))
         self.relationship = QLineEdit(str((record or {}).get("relacion_propietario") or ""))
+        self.relationship.setPlaceholderText("Propietario, familiar, empleado...")
         self.delivery_notes = QTextEdit(str((record or {}).get("observaciones_entrega") or ""))
-        self.delivery_notes.setMaximumHeight(55)
-        delivery.addRow("Persona que entrega:", self.deliverer)
-        delivery.addRow("Teléfono:", self.delivery_phone)
-        delivery.addRow("Relación:", self.relationship)
+        self.delivery_notes.setMaximumHeight(110)
+        delivery.addRow("Persona que entrega el vehiculo:", self.deliverer)
+        delivery.addRow("Telefono:", self.delivery_phone)
+        delivery.addRow("Relacion:", self.relationship)
         delivery.addRow("Observaciones:", self.delivery_notes)
-        layout.addWidget(QLabel("<b>Recepción</b>"))
-        layout.addLayout(delivery)
-
-        layout.addWidget(QLabel("<b>Refacciones</b>"))
-        self.parts_table = QTableWidget(len(self.parts), 4)
-        self.parts_table.setHorizontalHeaderLabels(["Usar", "Refacción", "Cantidad", "Precio unitario"])
-        self.parts_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
+        delivery_help = QLabel(
+            "Registra a la persona que trae y entrega el vehiculo en la agencia. "
+            "Puede ser el propietario o un tercero; su nombre es obligatorio."
         )
+        delivery_help.setWordWrap(True)
+        delivery_layout.addWidget(delivery_help)
+        delivery_layout.addLayout(delivery)
+        delivery_layout.addStretch()
+
+        parts_help = QLabel("Marca Usar en las refacciones necesarias y ajusta la cantidad y el precio unitario.")
+        parts_help.setWordWrap(True)
+        parts_layout.addWidget(parts_help)
+        self.parts_table = QTableWidget(len(self.parts), 4)
+        self.parts_table.setHorizontalHeaderLabels(["Usar", "Refaccion", "Cantidad", "Precio unitario"])
+        header = self.parts_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.parts_table.setColumnWidth(0, 65)
+        self.parts_table.setColumnWidth(2, 120)
+        self.parts_table.setColumnWidth(3, 165)
+        self.parts_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.parts_table.setAlternatingRowColors(True)
+        self.parts_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.parts_table.setWordWrap(False)
+        self.parts_table.verticalHeader().setVisible(False)
         part_by_id = {part["id_refaccion"]: part for part in (existing_parts or [])}
         for index, part in enumerate(self.parts):
             check = QTableWidgetItem()
@@ -328,7 +378,9 @@ class ServiceDialog(QDialog):
             selected = part.get("id_refaccion") in part_by_id
             check.setCheckState(Qt.CheckState.Checked if selected else Qt.CheckState.Unchecked)
             self.parts_table.setItem(index, 0, check)
-            self.parts_table.setItem(index, 1, QTableWidgetItem(str(part["nombre"])))
+            name = QTableWidgetItem(str(part["nombre"]))
+            name.setToolTip(str(part["nombre"]))
+            self.parts_table.setItem(index, 1, name)
             quantity = QSpinBox()
             quantity.setRange(1, 2_000_000_000)
             quantity.setValue(int(part_by_id.get(part["id_refaccion"], {}).get("cantidad", 1)))
@@ -344,11 +396,14 @@ class ServiceDialog(QDialog):
                 )
             )
             self.parts_table.setCellWidget(index, 3, price)
-        self.parts_table.setMaximumHeight(180)
-        layout.addWidget(self.parts_table)
+        row_height = 42
+        if self.parts:
+            row_height = max(row_height, self.parts_table.cellWidget(0, 2).sizeHint().height() + 6)
+        self.parts_table.verticalHeader().setDefaultSectionSize(row_height)
+        parts_layout.addWidget(self.parts_table, 1)
 
         next_service = QFormLayout()
-        self.next_enabled = QCheckBox("Programar próximo servicio")
+        self.next_enabled = QCheckBox("Programar proximo servicio")
         self.next_date = QDateEdit()
         self.next_date.setCalendarPopup(True)
         self.next_date.setDate(QDate.currentDate())
@@ -367,7 +422,9 @@ class ServiceDialog(QDialog):
         next_service.addRow("Fecha:", self.next_date)
         next_service.addRow("Kilometraje:", self.mileage)
         next_service.addRow("Notas:", self.next_notes)
-        layout.addLayout(next_service)
+        service_layout.addWidget(QLabel("<b>Proximo servicio</b>"))
+        service_layout.addLayout(next_service)
+        service_layout.addStretch()
         self.next_enabled.toggled.connect(self.toggle_next_service)
         self.toggle_next_service(self.next_enabled.isChecked())
 
@@ -377,7 +434,7 @@ class ServiceDialog(QDialog):
             self.status.setCurrentText(str(record.get("estado") or "En espera"))
             self.cost.setValue(float(record.get("costo") or 0))
             self.description.setPlainText(str(record.get("descripcion") or ""))
-        add_buttons(self, layout)
+        add_buttons(self, layout, on_save)
 
     def toggle_next_service(self, enabled: bool) -> None:
         for widget in (self.next_date, self.mileage, self.next_notes):
@@ -390,7 +447,7 @@ class ServiceDialog(QDialog):
             None,
         )
         if vehicle is None:
-            raise ValueError("Selecciona un vehículo.")
+            raise ValueError("Selecciona un vehiculo.")
         parts = []
         for index, part in enumerate(self.parts):
             if self.parts_table.item(index, 0).checkState() == Qt.CheckState.Checked:
@@ -426,7 +483,7 @@ class ServiceDialog(QDialog):
                 "id": vehicle["id_vehiculo"],
                 "idMarca": vehicle["id_marca"],
                 "idModelo": vehicle["id_modelo"],
-                "idAno": vehicle["id_ano"],
+                "idAnio": vehicle["id_anio"],
                 "placas": vehicle["placas"],
                 "color": vehicle.get("color"),
                 "vin": vehicle.get("vin"),

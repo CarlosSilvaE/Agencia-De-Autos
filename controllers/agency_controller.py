@@ -16,7 +16,7 @@ class AuthController:
         return self.current_user
 
     def logout(self) -> None:
-        """Descarta la identidad autenticada al salir de la aplicación."""
+        """Descarta la identidad autenticada al salir de la aplicacion."""
         self.current_user = None
 
 

@@ -57,7 +57,7 @@ class ServiceReceipt:
         return cls(
             folio=value("folio"), intake_date=value("fecha_ingreso"),
             owner=owner, owner_phone=value("telefono"),
-            vehicle=" ".join(value(k, "") for k in ("ano", "marca", "modelo")).strip(),
+            vehicle=" ".join(value(k, "") for k in ("anio", "marca", "modelo")).strip(),
             plates=value("placas"), kind=value("tipo_servicio"),
             status=value("estado"), description=value("descripcion"),
             cost=Decimal(str(service.get("costo") or 0)),
@@ -71,24 +71,24 @@ class ServiceReceipt:
 
     def as_text(self) -> str:
         lines = [
-            "AGENCIA DE AUTOMÓVILES - COMPROBANTE DE SERVICIO",
+            "AGENCIA DE AUTOMOVILES - COMPROBANTE DE SERVICIO",
             "=" * 52,
             f"Folio: {self.folio}",
             f"Fecha de ingreso: {self.intake_date}",
             f"Propietario: {self.owner}",
-            f"Teléfono del propietario: {self.owner_phone}",
-            f"Vehículo: {self.vehicle}",
+            f"Telefono del propietario: {self.owner_phone}",
+            f"Vehiculo: {self.vehicle}",
             f"Placas: {self.plates}",
             f"Servicio: {self.kind} / {self.status}",
-            f"Descripción: {self.description}",
+            f"Descripcion: {self.description}",
             f"Costo: ${self.cost:,.2f}",
             "Refacciones utilizadas:",
             *([part.describe() for part in self.parts] or ["  - Ninguna"]),
-            f"Persona que entregó: {self.deliverer}",
-            f"Teléfono de entrega: {self.delivery_phone}",
-            f"Relación con propietario: {self.relationship}",
+            f"Persona que entrego: {self.deliverer}",
+            f"Telefono de entrega: {self.delivery_phone}",
+            f"Relacion con propietario: {self.relationship}",
             f"Observaciones: {self.observations}",
-            f"Próximo servicio: {self.next_date}",
+            f"Proximo servicio: {self.next_date}",
             f"Kilometraje programado: {self.mileage}",
         ]
         return "\n".join(lines)
