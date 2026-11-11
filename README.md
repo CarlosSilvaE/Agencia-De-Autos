@@ -7,14 +7,17 @@ Aplicacion **desktop** de mantenimiento preventivo/correctivo en **Python + PySi
 Necesitas **Docker Desktop** y **Python 3.10 o posterior**. Ejecuta los comandos desde la raiz del proyecto:
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 notepad .env                  # Cambia las 3 contrasenas por valores propios
 # Inicializa Docker Desktop antes de continuar
-docker compose up -d
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe main.py
+.\iniciar.ps1
 ```
+
+`iniciar.ps1` prepara el entorno `venv`, inicia MySQL y abre la aplicacion de escritorio. En VS Code, selecciona **Agencia - aplicacion de escritorio** y presiona **F5**; usa el mismo entorno y prepara MySQL antes de depurar. El archivo `.env` del proyecto tiene prioridad sobre las variables heredadas de la terminal.
+
+Al iniciar se retiran los contenedores antiguos `backend` y `frontend` de este proyecto mediante `--remove-orphans`, conservando el volumen `mysql_data`. Docker ejecuta solamente MySQL; la interfaz se abre como una ventana de Windows. La direccion `http://localhost:8080` pertenecia a la version web anterior.
+
+Para preparar MySQL sin abrir la ventana: `.\iniciar.ps1 -SoloPreparar`. Para instalar o actualizar manualmente las dependencias: `.\venv\Scripts\python.exe -m pip install -r requirements.txt`.
 
 Los parametros del archivo `.env` definen la conexion. Por defecto MySQL escucha **solo en `127.0.0.1:3307`**. Si ya tienes un volumen Docker creado, `database/init.sql` **no se ejecutara nuevamente**. Al iniciar la aplicacion se renombran la tabla y las columnas antiguas de anios a `anio` e `id_anio`, conservando sus registros y relaciones. `ADMIN_INITIAL_PASSWORD` solamente se utiliza si todavia no existe ningun administrador.
 
@@ -50,7 +53,7 @@ Docker carga estos datos al crear la base por primera vez. Para agregarlos a un 
 ## Pruebas
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
 Los tests comprueban la delegacion MVC, hashes, Strategy, Singleton, logout y ediciones sin cambios. **No sustituyen** las pruebas manuales de formularios contra MySQL: seguir los 12 pasos en `docs/CUMPLIMIENTO_TAREA.md`.

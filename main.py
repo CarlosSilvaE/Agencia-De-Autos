@@ -16,7 +16,7 @@ from views.theme import apply_theme
 
 
 def main() -> int:
-    load_dotenv(Path(__file__).resolve().parent / ".env")
+    load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
     application = QApplication(sys.argv)
     application.setApplicationName("Agencia de Automoviles")
     apply_theme(application)
