@@ -39,6 +39,7 @@ from controllers import (
 )
 from models.database import DataAccessError
 from .theme import set_primary_button
+from .status_chart import StatusBarChart
 from .forms import (
     AdminDialog,
     CatalogItemDialog,
@@ -135,6 +136,7 @@ class LoginDialog(QDialog):
         except (DataAccessError, ValueError) as error:
             self.message.setText(str(error))
             return
+        self.password_input.clear()
         self.accept()
 
 
@@ -143,6 +145,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Agencia de Automóviles")
         self.resize(1280, 780)
+        self._auth = controllers.auth
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(22, 18, 22, 20)
@@ -157,10 +160,11 @@ class MainWindow(QMainWindow):
         header.addStretch()
         session = QLabel(f"Sesión: {username}")
         session.setObjectName("headerSession")
+        self._session_label = session
         header.addWidget(session)
-        logout = QPushButton("Cerrar")
+        logout = QPushButton("Cerrar sesión")
         logout.setObjectName("headerButton")
-        logout.clicked.connect(self.close)
+        logout.clicked.connect(self.logout)
         header.addWidget(logout)
         layout.addWidget(top_bar)
 
@@ -175,8 +179,25 @@ class MainWindow(QMainWindow):
         )
         tabs.addTab(CatalogsPage(controllers.catalogs), "Catálogos")
         tabs.addTab(AdminsPage(controllers.admins), "Administradores")
+        tabs.currentChanged.connect(lambda index: self._refresh_tab(tabs, index))
         layout.addWidget(tabs, 1)
         self.setCentralWidget(central)
+
+    @staticmethod
+    def _refresh_tab(tabs: QTabWidget, index: int) -> None:
+        page = tabs.widget(index)
+        if page is not None and hasattr(page, "refresh"):
+            page.refresh()
+
+    def logout(self) -> None:
+        self._auth.logout()
+        self._session_label.clear()
+        self.close()
+
+    def closeEvent(self, event) -> None:
+        self._auth.logout()
+        self._session_label.clear()
+        super().closeEvent(event)
 
 
 class DashboardPage(QWidget):
@@ -225,10 +246,13 @@ class DashboardPage(QWidget):
             card_layout.addWidget(label)
             self.summary.addWidget(card, 0, column)
         layout.addLayout(self.summary)
+        self.chart = StatusBarChart(self)
+        layout.addWidget(self.chart, 1)
         self.table = table_for(self, ["Estado", "Cantidad"])
+        self.table.setMaximumHeight(160)
         layout.addWidget(self.table)
-        layout.addStretch()
         self.filter.currentIndexChanged.connect(self.refresh)
+        self.day.dateChanged.connect(self.refresh)
         self.refresh()
 
     def refresh(self) -> None:
@@ -246,6 +270,7 @@ class DashboardPage(QWidget):
             self.in_progress.setText(str(counts.get("En proceso", 0)))
             self.finished.setText(str(counts.get("Finalizado", 0)))
             self.total_services.setText(str(sum(counts.values())))
+            self.chart.set_counts(counts)
         except (DataAccessError, KeyError, TypeError, ValueError) as error:
             show_error(self, error)
 
@@ -273,6 +298,7 @@ class ServicesPage(QWidget):
             ("Editar", self.edit_service),
             ("Cambiar estado", self.change_status),
             ("Comprobante", self.receipt),
+            ("Historial recepción", self.show_delivery_history),
             ("Eliminar", self.delete_service),
             ("Actualizar", self.refresh),
         ):
@@ -316,7 +342,7 @@ class ServicesPage(QWidget):
                 display,
                 ["folio", "fecha_ingreso", "tipo_servicio", "estado", "costo", "_owner", "_vehicle"],
             )
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
     def current(self) -> dict[str, Any] | None:
@@ -329,7 +355,7 @@ class ServicesPage(QWidget):
         try:
             vehicles, parts = self.controller.options()
             dialog = ServiceDialog(vehicles, parts, parent=self)
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
             return
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -367,26 +393,36 @@ class ServicesPage(QWidget):
         try:
             self.controller.change_status(record["folio"], state)
             self.refresh()
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
     def receipt(self) -> None:
         record = self.current()
         if record is None:
             return
-        text = (
-            f"Folio: {record.get('folio')}\n"
-            f"Fecha de ingreso: {record.get('fecha_ingreso')}\n"
-            f"Propietario: {record.get('nombre')} {record.get('apellido_paterno')}\n"
-            f"Vehículo: {record.get('ano')} {record.get('marca')} {record.get('modelo')}\n"
-            f"Placas: {record.get('placas')}\n"
-            f"Servicio: {record.get('tipo_servicio')} — {record.get('estado')}\n"
-            f"Descripción: {record.get('descripcion')}\n"
-            f"Costo: ${record.get('costo')}\n"
-            f"Recibió: {record.get('nombre_entrega')}\n"
-            f"Observaciones: {record.get('observaciones_entrega') or ''}"
-        )
-        ReceiptDialog(text, self).exec()
+        try:
+            ReceiptDialog(self.controller.receipt(record["folio"]), self).exec()
+        except (DataAccessError, ValueError, KeyError, TypeError) as error:
+            show_error(self, error)
+
+    def show_delivery_history(self) -> None:
+        record = self.current()
+        if record is None:
+            return
+        try:
+            entries = self.controller.delivery_history(record["folio"])
+            text = [f"Historial de recepción del servicio {record['folio']}", "=" * 48]
+            for idx, row in enumerate(entries, start=1):
+                text.extend([
+                    f"Registro {idx} — {row['fecha']}",
+                    f"Nombre: {row['nombre_entrega']}",
+                    f"Teléfono: {row.get('telefono') or 'Sin teléfono'}",
+                    f"Relación: {row.get('relacion_propietario') or 'Sin especificar'}",
+                    f"Observaciones: {row.get('observaciones') or 'Ninguna'}", "",
+                ])
+            ReceiptDialog("\n".join(text), self).exec()
+        except (DataAccessError, KeyError) as error:
+            show_error(self, error)
 
     def delete_service(self) -> None:
         record = self.current()
@@ -395,7 +431,7 @@ class ServicesPage(QWidget):
         try:
             self.controller.delete(record["folio"])
             self.refresh()
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
 
@@ -495,7 +531,7 @@ class UpcomingPage(QWidget):
                 display,
                 ["fecha_programada", "folio", "placas", "_owner", "kilometraje", "notas"],
             )
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
 
@@ -570,7 +606,7 @@ class CustomersVehiclesPage(QWidget):
                 display,
                 ["id_vehiculo", "placas", "_owner", "marca", "modelo", "ano", "color", "vin"],
             )
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
     def create_customer(self) -> None:
@@ -589,7 +625,7 @@ class CustomersVehiclesPage(QWidget):
             payload = dialog.payload()
             self.controller.save_customer(payload, row["id_cliente"] if row else None)
             self.refresh()
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
     def delete_customer(self) -> None:
@@ -613,7 +649,7 @@ class CustomersVehiclesPage(QWidget):
             payload = dialog.payload()
             self.controller.save_vehicle(payload, row["id_vehiculo"] if row else None)
             self.refresh()
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
     def delete_vehicle(self) -> None:
@@ -628,7 +664,7 @@ class CustomersVehiclesPage(QWidget):
             else:
                 self.controller.delete_vehicle(entity_id)
             self.refresh()
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
 
@@ -677,7 +713,7 @@ class CatalogsPage(QWidget):
             self.table.setColumnCount(len(keys) + 1)
             self.table.setHorizontalHeaderLabels(["ID", *keys])
             fill_table(self.table, self.rows, [self.CATALOGS[key][1], *keys])
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
     def create_item(self) -> None:
@@ -699,7 +735,7 @@ class CatalogsPage(QWidget):
             item_id = row[self.CATALOGS[key][1]] if row else None
             self.controller.save(key, values, item_id)
             self.refresh()
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
     def delete_item(self) -> None:
@@ -709,7 +745,7 @@ class CatalogsPage(QWidget):
             try:
                 self.controller.delete(key, row[self.CATALOGS[key][1]])
                 self.refresh()
-            except DataAccessError as error:
+            except (DataAccessError, ValueError) as error:
                 show_error(self, error)
 
 
@@ -744,7 +780,7 @@ class AdminsPage(QWidget):
                 self.rows,
                 ["id_administrador", "nombre", "usuario", "activo"],
             )
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
     def create_admin(self) -> None:
@@ -766,7 +802,7 @@ class AdminsPage(QWidget):
                 row["id_administrador"] if row else None,
             )
             self.refresh()
-        except DataAccessError as error:
+        except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
     def delete_admin(self) -> None:
@@ -775,5 +811,5 @@ class AdminsPage(QWidget):
             try:
                 self.controller.delete(row["id_administrador"])
                 self.refresh()
-            except DataAccessError as error:
+            except (DataAccessError, ValueError) as error:
                 show_error(self, error)

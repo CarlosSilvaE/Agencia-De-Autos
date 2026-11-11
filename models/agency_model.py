@@ -11,12 +11,18 @@ from datetime import date, datetime
 from typing import Any
 
 from .database import DataAccessError, MySQLDatabase
+from .dashboard_strategy import DailyDashboardStrategy, TotalDashboardStrategy
+from .domain import ServiceReceipt
 
 
 class AgencyModel:
     """Domain data model backed directly by the Docker-hosted MySQL database."""
 
     STATES = ("En espera", "En proceso", "Finalizado")
+    DASHBOARD_STRATEGIES = {
+        "total": TotalDashboardStrategy(),
+        "daily": DailyDashboardStrategy(),
+    }
     CATALOGS = {
         "marcas": ("marcas", "id_marca", ("nombre",)),
         "modelos": ("modelos", "id_modelo", ("id_marca", "nombre")),
@@ -41,6 +47,11 @@ class AgencyModel:
                 cursor.execute("INSERT IGNORE INTO anos (ano) VALUES (%s)", (year,))
             cursor.execute("SELECT COUNT(*) AS total FROM administradores")
             if cursor.fetchone()["total"] == 0:
+                if not admin_username.strip() or len(admin_password) < 8:
+                    raise DataAccessError(
+                        "Configura ADMIN_INITIAL_USERNAME y ADMIN_INITIAL_PASSWORD "
+                        "(mínimo 8 caracteres) en .env para el primer inicio."
+                    )
                 cursor.execute(
                     """
                     INSERT INTO administradores (nombre, usuario, password_hash)
@@ -115,29 +126,13 @@ class AgencyModel:
     def dashboard(
         self, filter_name: str, day: str | None = None
     ) -> list[dict[str, Any]]:
+        # Strategy: las variantes encapsulan sus propias condiciones y parámetros SQL.
+        strategy = self.DASHBOARD_STRATEGIES.get(str(filter_name).casefold())
+        if strategy is None:
+            raise ValueError("Filtro de dashboard desconocido.")
+        query, parameters = strategy.build(day)
         with self.database.session() as (_, cursor):
-            if filter_name.casefold() == "daily" and day:
-                cursor.execute(
-                    """
-                    SELECT e.nombre AS estado, COUNT(s.id_servicio) AS cantidad
-                    FROM estados e
-                    LEFT JOIN servicios s
-                      ON s.estado=e.nombre AND DATE(s.fecha_ingreso)=%s
-                    WHERE e.activo=1
-                    GROUP BY e.nombre ORDER BY e.id_estado
-                    """,
-                    (day,),
-                )
-            else:
-                cursor.execute(
-                    """
-                    SELECT e.nombre AS estado, COUNT(s.id_servicio) AS cantidad
-                    FROM estados e
-                    LEFT JOIN servicios s ON s.estado=e.nombre
-                    WHERE e.activo=1
-                    GROUP BY e.nombre ORDER BY e.id_estado
-                    """
-                )
+            cursor.execute(query, parameters)
             return cursor.fetchall()
 
     def list_services(self, folio: str = "", owner: str = "") -> list[dict[str, Any]]:
@@ -171,7 +166,7 @@ class AgencyModel:
                 WHERE (%s='' OR s.folio=%s)
                   AND (%s='' OR CONCAT_WS(' ', c.nombre, c.apellido_paterno,
                        c.apellido_materno) LIKE CONCAT('%%', %s, '%%'))
-                ORDER BY s.fecha_ingreso DESC LIMIT 200
+                ORDER BY s.fecha_ingreso DESC
                 """,
                 (folio, folio, owner, owner),
             )
@@ -182,12 +177,31 @@ class AgencyModel:
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         return self.list_vehicles(), self.list_catalog("refacciones")
 
+    def service_receipt(self, folio: str) -> ServiceReceipt:
+        rows = self.list_services(folio=folio)
+        if not rows:
+            raise DataAccessError("No se encontró el servicio solicitado.")
+        return ServiceReceipt.from_records(rows[0], self.service_parts(folio))
+
+    def delivery_history(self, folio: str) -> list[dict[str, Any]]:
+        with self.database.session() as (_, cursor):
+            cursor.execute(
+                """SELECT e.fecha, e.nombre_entrega, e.telefono,
+                          e.relacion_propietario, e.observaciones
+                   FROM entregas e JOIN servicios s ON s.id_servicio=e.id_servicio
+                   WHERE s.folio=%s ORDER BY e.id_entrega DESC""",
+                (folio,),
+            )
+            return cursor.fetchall()
+
     def service_parts(self, folio: str) -> list[dict[str, Any]]:
         with self.database.session() as (_, cursor):
             cursor.execute(
                 """
-                SELECT sr.id_refaccion, sr.cantidad, sr.precio_unitario
+                SELECT sr.id_refaccion, sr.cantidad, sr.precio_unitario,
+                       r.nombre, r.sku
                 FROM servicio_refaccion sr
+                JOIN refacciones r ON r.id_refaccion=sr.id_refaccion
                 JOIN servicios s ON s.id_servicio=sr.id_servicio
                 WHERE s.folio=%s
                 """,
@@ -367,7 +381,10 @@ class AgencyModel:
                     """,
                     (*values, customer_id),
                 )
-                self._require_existing(cursor, cursor.rowcount, "No se encontró el cliente.")
+                self._require_existing_update(
+                    cursor, cursor.rowcount, "clientes", "id_cliente", customer_id,
+                    "No se encontró el cliente."
+                )
             connection.commit()
 
     def delete_customer(self, customer_id: int) -> None:
@@ -439,7 +456,10 @@ class AgencyModel:
                     """,
                     (*values, vehicle_id),
                 )
-                self._require_existing(cursor, cursor.rowcount, "No se encontró el vehículo.")
+                self._require_existing_update(
+                    cursor, cursor.rowcount, "vehiculos", "id_vehiculo", vehicle_id,
+                    "No se encontró el vehículo."
+                )
             connection.commit()
 
     def delete_vehicle(self, vehicle_id: int) -> None:
@@ -487,7 +507,10 @@ class AgencyModel:
                     f"WHERE `{identifier}`=%s AND activo=1",
                     (*[payload.get(field) for field in fields], item_id),
                 )
-                self._require_existing(cursor, cursor.rowcount, "No se encontró el registro.")
+                self._require_existing_update(
+                    cursor, cursor.rowcount, table, identifier, item_id,
+                    "No se encontró el registro."
+                )
             connection.commit()
 
     def delete_catalog_item(self, catalog: str, item_id: int) -> None:
@@ -553,7 +576,10 @@ class AgencyModel:
                         """,
                         (name, username, active, admin_id),
                     )
-                self._require_existing(cursor, cursor.rowcount, "No se encontró el administrador.")
+                self._require_existing_update(
+                    cursor, cursor.rowcount, "administradores", "id_administrador",
+                    admin_id, "No se encontró el administrador.", active_only=False,
+                )
 
     def delete_admin(self, admin_id: int) -> None:
         with self.database.session(transaction=True) as (_, cursor):
@@ -705,21 +731,27 @@ class AgencyModel:
         deliverer = str(delivery.get("nombre") or "").strip()
         if not deliverer:
             raise ValueError("Se requiere identificar a la persona que entrega el vehículo.")
-        cursor.execute("DELETE FROM entregas WHERE id_servicio=%s", (service_id,))
         cursor.execute(
-            """
-            INSERT INTO entregas
-                (id_servicio,nombre_entrega,telefono,relacion_propietario,observaciones)
-            VALUES (%s,%s,%s,%s,%s)
-            """,
-            (
-                service_id,
-                deliverer,
-                delivery.get("telefono"),
-                delivery.get("relacionPropietario"),
-                delivery.get("observaciones"),
-            ),
+            """SELECT nombre_entrega, telefono, relacion_propietario, observaciones
+               FROM entregas WHERE id_servicio=%s
+               ORDER BY id_entrega DESC LIMIT 1""",
+            (service_id,),
         )
+        last_delivery = cursor.fetchone()
+        delivery_values = (
+            deliverer, delivery.get("telefono"), delivery.get("relacionPropietario"),
+            delivery.get("observaciones"),
+        )
+        if last_delivery is None or delivery_values != tuple(
+            last_delivery.get(key) for key in
+            ("nombre_entrega", "telefono", "relacion_propietario", "observaciones")
+        ):
+            cursor.execute(
+                """INSERT INTO entregas
+                   (id_servicio,nombre_entrega,telefono,relacion_propietario,observaciones)
+                   VALUES (%s,%s,%s,%s,%s)""",
+                (service_id, *delivery_values),
+            )
         cursor.execute(
             "DELETE FROM proximos_servicios WHERE id_servicio=%s", (service_id,)
         )
@@ -746,6 +778,33 @@ class AgencyModel:
         active_ids = [row["id_administrador"] for row in cursor.fetchall()]
         if admin_id in active_ids and len(active_ids) <= 1:
             raise DataAccessError("Debe permanecer al menos un administrador activo.")
+
+    @staticmethod
+    def _require_existing_update(
+        cursor: Any, affected: int, table: str, identifier: str, item_id: int,
+        message: str, active_only: bool = True,
+    ) -> None:
+        if affected:
+            return
+        # Los nombres provienen exclusivamente de las constantes internas (allowlist).
+        allowed = {
+            ("clientes", "id_cliente"),
+            ("vehiculos", "id_vehiculo"),
+            ("administradores", "id_administrador"),
+            ("marcas", "id_marca"),
+            ("modelos", "id_modelo"),
+            ("anos", "id_ano"),
+            ("refacciones", "id_refaccion"),
+        }
+        if (table, identifier) not in allowed:
+            raise ValueError("Tabla o identificador no permitidos.")
+        active_clause = " AND activo=1" if active_only else ""
+        cursor.execute(
+            f"SELECT 1 FROM `{table}` WHERE `{identifier}`=%s{active_clause}",
+            (item_id,),
+        )
+        if cursor.fetchone() is None:
+            raise DataAccessError(message)
 
     @staticmethod
     def _require_existing(cursor: Any, affected: int, message: str) -> None:

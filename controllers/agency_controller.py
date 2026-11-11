@@ -9,9 +9,15 @@ from models import AgencyModel
 class AuthController:
     def __init__(self, model: AgencyModel) -> None:
         self.model = model
+        self.current_user: str | None = None
 
     def login(self, username: str, password: str) -> str:
-        return self.model.authenticate(username, password)
+        self.current_user = self.model.authenticate(username, password)
+        return self.current_user
+
+    def logout(self) -> None:
+        """Descarta la identidad autenticada al salir de la aplicación."""
+        self.current_user = None
 
 
 class DashboardController:
@@ -31,6 +37,12 @@ class ServiceController:
 
     def options(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         return self.model.service_options()
+
+    def receipt(self, folio: str) -> str:
+        return self.model.service_receipt(folio).as_text()
+
+    def delivery_history(self, folio: str) -> list[dict[str, Any]]:
+        return self.model.delivery_history(folio)
 
     def parts(self, folio: str) -> list[dict[str, Any]]:
         return self.model.service_parts(folio)

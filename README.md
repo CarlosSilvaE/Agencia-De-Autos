@@ -1,68 +1,54 @@
-# Agencia de Automóviles
+# Agencia de Automóviles — Parcial 2 (MVC + patrones)
 
-Aplicación de escritorio hecha con **Python + PySide6** y organizada con
-arquitectura MVC. La app se conecta directamente desde Python a MySQL 8.4, que
-se ejecuta en Docker. No requiere API web ni backend en otro lenguaje.
+Aplicación **desktop** de mantenimiento preventivo/correctivo en **Python + PySide6**. El modelo realiza las operaciones en **MySQL 8.4** (contenedor Docker). No utiliza un backend HTTP separado: desde la interfaz, las operaciones pasan por controladores hacia el modelo y la base de datos.
 
-## Requisitos
+## Ejecutar en Windows (PowerShell)
 
-- Docker Desktop con Docker Compose.
-- Python 3.10 o posterior.
+Necesitas **Docker Desktop** y **Python 3.10 o posterior**. Ejecuta los comandos desde la raíz del proyecto:
 
-## Inicio
+```powershell
+Copy-Item .env.example .env
+notepad .env                  # Cambia las 3 contraseñas por valores propios
+# Inicializa Docker Desktop antes de continuar
+docker compose up -d
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
+```
 
-1. Copia `.env.example` como `.env` y configura contraseñas propias para MySQL
-   y el administrador inicial antes de usar datos reales.
-2. Inicia MySQL: `docker compose up -d`.
-3. Desde la raíz del proyecto, instala dependencias y ejecuta la aplicación:
+Los parámetros del archivo `.env` definen la conexión. Por defecto MySQL escucha **solo en `127.0.0.1:3307`**. Si ya tienes un volumen Docker creado, `database/init.sql` **no se ejecutará nuevamente**; esta versión no modifica el esquema existente. `ADMIN_INITIAL_PASSWORD` solamente se utiliza si todavía no existe ningún administrador.
 
-   ```powershell
-   python -m pip install -r requirements.txt
-   python main.py
-   ```
-
-4. Inicia sesión con `ADMIN_INITIAL_USERNAME` y `ADMIN_INITIAL_PASSWORD` del
-   archivo `.env`. En una instalación nueva, el usuario predeterminado es
-   `admin`; cambia la contraseña de ejemplo antes de utilizar la aplicación.
-
-La conexión de la aplicación usa `MYSQL_HOST` y `MYSQL_PORT`; por defecto
-MySQL está disponible solo en el equipo local, en el puerto `3307`. Los datos
-se conservan en el volumen Docker `mysql_data`.
-
-Para detener los contenedores: `docker compose down`. Para borrar también los
-datos guardados, usa `docker compose down -v`.
+Si Docker falla, revisa `docker compose ps` y `docker compose logs database`. Para detenerlo sin borrar los datos: `docker compose down`. **No uses `docker compose down -v` si quieres conservar la base de datos.**
 
 ## Módulos
 
-- Inicio de sesión administrativo.
-- Resumen de servicios por estado, total o fecha.
-- Alta, consulta, edición, cambio de estado, comprobante y eliminación de
-  servicios.
-- Captura de entregas, refacciones y próximos servicios asociados; el inventario
-  de refacciones se actualiza en una transacción MySQL.
-- Consulta de próximos servicios por folio o propietario.
-- Administración de clientes y vehículos.
-- Catálogos de marcas, modelos, años y refacciones.
-- Administración de usuarios administradores.
+- Login de administradores con contraseñas hasheadas, cierre de sesión, administración de usuarios.
+- Catálogos CRUD de marcas, modelos, años y refacciones; gestión de clientes y vehículos.
+- Servicios: alta, modificación, consulta por folio o propietario, tres estados, eliminación y comprobante imprimible / PDF.
+- Control de quién entregó el vehículo con historial de recepciones.
+- Varias refacciones por servicio y la misma refacción en múltiples servicios, con control de existencias.
+- Próximos servicios: fecha, kilometraje y búsqueda por folio/propietario.
+- Dashboard: métricas, tabla y **gráfica de barras real** filtrable por total o por día.
 
-## Arquitectura
+## Arquitectura, patrones y documentación de la tarea
 
-- `main.py`: punto de entrada y composición de dependencias.
-- `models/`: operaciones de negocio y acceso directo a MySQL.
-- `controllers/`: coordinación de autenticación y módulos de negocio entre
-  modelo y vistas.
-- `views/`: ventanas, páginas, formularios y tema PySide6.
-- `tests/`: pruebas del flujo modelo-controlador.
-- `database/`: esquema inicial de MySQL.
-- `docker-compose.yml`: contenedor de MySQL.
+- MVC: `models/`, `controllers/`, `views/`. `models/domain.py` define `ServiceReceipt` y `ReceiptPart` como objetos de dominio que construyen y dan formato al comprobante.
+- **Singleton**: `models/provider.py` (`DatabaseProvider`). Instancia de proveedor compartida; conexiones y transacciones independientes.
+- **Strategy**: `models/dashboard_strategy.py`, con dos consultas seleccionables (`TotalDashboardStrategy`, `DailyDashboardStrategy`).
+- Diagrama de clases: [`docs/diagrama_clases.png`](docs/diagrama_clases.png).
+- Diagrama de base de datos: [`docs/diagrama_bd.png`](docs/diagrama_bd.png).
+- Matriz de cumplimiento y pruebas: [`docs/CUMPLIMIENTO_TAREA.md`](docs/CUMPLIMIENTO_TAREA.md).
+- Guion de exposición: [`docs/GUION_EXPOSICION.md`](docs/GUION_EXPOSICION.md).
+- Plantilla requerida de integrantes/responsabilidades: `docs/Entrega_y_responsabilidades.docx` (**rellenar con nombres y asignaciones reales**).
 
-La aplicación de escritorio sigue MVC: las vistas presentan datos y capturan
-acciones; los controladores coordinan los casos de uso; y los modelos validan
-las operaciones y persisten en MySQL mediante el componente de base de datos.
-El usuario administrador inicial solo se crea cuando la base de datos no
-contiene administradores. Cambiar las variables del `.env` después de que ya
-exista no cambia la contraseña guardada; usa **Administradores** para
-modificarla.
+## Pruebas
 
-Para ejecutar las pruebas MVC desde la raíz:
-`python -m unittest discover -s tests -v`.
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+Los tests comprueban la delegación MVC, hashes, Strategy, Singleton, logout y ediciones sin cambios. **No sustituyen** las pruebas manuales de formularios contra MySQL: seguir los 12 pasos en `docs/CUMPLIMIENTO_TAREA.md`.
+
+## Seguridad y distribución
+
+El ZIP **no contiene `.env`, `.git`, credenciales reales ni entornos virtuales**. Genera tus propias contraseñas en `.env` y nunca publiques el archivo. Si el ZIP original incluía contraseñas utilizables, cámbialas en el entorno real. Usa una cuenta MySQL con permisos adecuados para la práctica.

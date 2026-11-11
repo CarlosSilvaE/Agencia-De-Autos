@@ -9,7 +9,8 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from controllers import AgencyControllers
-from models import AgencyModel, DataAccessError, MySQLDatabase
+from models import AgencyModel, DataAccessError
+from models.provider import DatabaseProvider
 from views.main_window import LoginDialog, MainWindow
 from views.theme import apply_theme
 
@@ -20,11 +21,11 @@ def main() -> int:
     application.setApplicationName("Agencia de Automóviles")
     apply_theme(application)
     application.setFont(QFont("Segoe UI", 10))
-    model = AgencyModel(MySQLDatabase())
+    model = AgencyModel(DatabaseProvider().database)
     try:
         model.initialize(
             os.getenv("ADMIN_INITIAL_USERNAME", "admin"),
-            os.getenv("ADMIN_INITIAL_PASSWORD", "admin123"),
+            os.getenv("ADMIN_INITIAL_PASSWORD", ""),
         )
     except DataAccessError as error:
         QMessageBox.critical(application.activeWindow(), "Error de base de datos", str(error))
