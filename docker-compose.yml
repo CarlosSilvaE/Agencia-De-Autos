@@ -1,4 +1,3 @@
-# Docker ejecuta MySQL; la interfaz PySide6 se inicia fuera del contenedor.
 name: agencia-automoviles
 
 services:

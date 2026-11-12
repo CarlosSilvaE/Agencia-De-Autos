@@ -14,16 +14,15 @@ from models.provider import DatabaseProvider
 from views.main_window import LoginDialog, MainWindow
 from views.theme import apply_theme
 
-
+""""
+Fragmento central de arranque
+"""
 def main() -> int:
-    # Carga la configuración, prepara MVC y abre el acceso administrativo.
-    # Carga las credenciales locales sin incluirlas en el código.
     load_dotenv(Path(__file__).resolve().parent / ".env")
     application = QApplication(sys.argv)
-    application.setApplicationName("Agencia de Automoviles")
+    application.setApplicationName("Agencia de Automóviles")
     apply_theme(application)
     application.setFont(QFont("Segoe UI", 10))
-    # Singleton entrega el proveedor al modelo de negocio.
     model = AgencyModel(DatabaseProvider().database)
     try:
         model.initialize(
@@ -33,9 +32,11 @@ def main() -> int:
     except DataAccessError as error:
         QMessageBox.critical(application.activeWindow(), "Error de base de datos", str(error))
         return 1
-    # Crea los controladores que utiliza la interfaz MVC.
+    
     controllers = AgencyControllers.from_model(model)
-    # Solicita autenticación antes de abrir la ventana principal.
+    """"
+    Ventana principal solo se abre cuando el inicio de sesion ha sido aceptado
+    """
     login = LoginDialog(controllers.auth)
     if login.exec() != QDialog.DialogCode.Accepted:
         return 0

@@ -1,4 +1,4 @@
-"""Grafica real, responsive y sin dependencias extra usando QPainter/Qt."""
+"""Gráfica real, responsive y sin dependencias extra usando QPainter/Qt."""
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt
@@ -7,7 +7,6 @@ from PySide6.QtWidgets import QWidget
 
 
 class StatusBarChart(QWidget):
-    # Dibuja la gráfica de barras según los estados de servicio.
     STATES = (
         ("En espera", "#E5A53D"),
         ("En proceso", "#3973C6"),
@@ -15,19 +14,16 @@ class StatusBarChart(QWidget):
     )
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        # Prepara los valores de la gráfica y el tamaño mínimo.
         super().__init__(parent)
         self._counts: dict[str, int] = {}
         self.setMinimumHeight(215)
-        self.setAccessibleName("Grafica de barras de servicios por estado")
+        self.setAccessibleName("Gráfica de barras de servicios por estado")
 
     def set_counts(self, counts: dict[str, int]) -> None:
-        # Actualiza los conteos y solicita volver a dibujar.
         self._counts = {name: max(0, int(counts.get(name, 0))) for name, _ in self.STATES}
         self.update()
 
     def paintEvent(self, event) -> None:
-        # Dibuja una barra proporcional para cada estado.
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
