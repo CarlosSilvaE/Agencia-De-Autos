@@ -1,57 +1,47 @@
-# Agencia de Automóviles — datos de prueba para Parcial 2
+﻿# Catalogos iniciales
 
-Este complemento **no cambia las clases, vistas ni tablas** del proyecto; agrega registros en la base MySQL existente y usa el `.env` de la raíz.
+El poblado esta directamente en `database/init.sql`. Incluye 10 marcas con 50 modelos reales, 12 anios (2015-2026) y 30 tipos de refacciones. El sistema tambien inicializa sus tres estados de servicio.
 
-## Requisitos
+El archivo no genera clientes, vehiculos, servicios ni administradores. Los precios MXN y las existencias son ejemplos. Los SKU `CAT-BOS-*` y `CAT-GAT-*` son identificadores internos; no representan numeros de parte del fabricante ni compatibilidad con un motor especifico. Referencias: [Bosch](https://www.boschautopartes.mx/products) y [Gates](https://www.gates.com.mx/catalogos_boletines_automotriz.html).
 
-- Estar en `~/Proyecto-Agencia/Agencia_De_Automoviles` (la carpeta donde funciona `main.py`).
-- Docker Desktop y el contenedor MySQL encendidos (`docker compose ps`).
-- Entorno virtual activo (`source .venv/bin/activate`).
-- Tener `mysql-connector-python` y `python-dotenv` instalados (`pip install -r requirements.txt`).
+## Base nueva
 
-## Sembrar
+Con Docker Desktop iniciado y `.env` configurado:
 
-```bash
-python scripts/cargar_datos_prueba.py
+```powershell
+docker compose up -d database
 ```
 
-Se crean, si aún no existen:
+MySQL ejecuta `init.sql` automaticamente solo cuando inicializa un volumen nuevo.
 
-- 5 marcas de prueba (`Demo P2 - *`) y 10 modelos.
-- 25 clientes (`p2demo-*@example.invalid`) y 30 vehículos (`P2D-*`).
-- 15 refacciones de prueba (`P2D-REF-*`).
-- **100 servicios** (`P2-DEMO-0001` al `P2-DEMO-0100`), distribuidos en 34 `En espera`, 33 `En proceso` y 33 `Finalizado`.
-- 100 entregas, 133 asignaciones de refacciones y 33 próximos servicios.
-- 12 servicios tienen la fecha actual para probar el filtro diario del Dashboard (4 por estado).
+## Base existente
 
-La primera carga produce **451 filas** adicionales, sin contar años ya existentes. Los importes y nombres son ficticios. Los administradores existentes no se modifican. La semilla no modifica registros existentes con estos identificadores (lo que hayas editado en la GUI se conserva) y no duplica filas al volver a ejecutarla.
+El metodo recomendado es ejecutar `.\venv\Scripts\python.exe scripts/preparar_entorno.py`. Sincroniza la cuenta con `.env`, comprueba los nombres de anios, aplica las migraciones y carga los catalogos. Consulta [la guia de despliegue](DESPLIEGUE.md).
 
-## Consultar
+Para una carga SQL manual, comprueba primero que el catalogo se llame `anios`, con columnas `id_anio`, `anio` y `activo`, y que `vehiculos.id_anio` lo referencie. El inicio normal de la aplicacion no renombra tablas.
 
-```bash
-python scripts/cargar_datos_prueba.py --resumen
+Abre el cliente MySQL:
+
+```powershell
+docker compose exec database sh -c 'mysql -u"$MYSQL_USER" -p "$MYSQL_DATABASE"'
 ```
 
-Consulta adicional desde Docker, sin compartir la contraseña:
+Introduce la clave MySQL configurada en `.env`. Ejecuta en el cliente:
 
-```bash
-docker compose exec database mysql -u agencia -p agencia_autos -e "SELECT estado, COUNT(*) AS total FROM servicios GROUP BY estado;"
+```sql
+SOURCE /docker-entrypoint-initdb.d/01-init.sql;
 ```
 
-En la app pulsa **Actualizar** en la pestaña **Resumen** y selecciona **Total** o **Día** con la fecha de hoy. En **Servicios**, busca `P2-DEMO-0001`. En **Clientes y vehículos**, observa las placas `P2D-0001`, etc.
+Esta ruta corresponde al archivo montado por Compose. Los INSERT agregan solo registros ausentes y se pueden repetir sin duplicar el poblado ni reiniciar precios o cantidades. Los nombres de las refacciones de este poblado se normalizan sin acentos al repetirlo. No se borran datos anteriores ni se recrea el volumen.
 
-## Eliminar solo los datos de prueba
+## Servicios
 
-```bash
-python scripts/cargar_datos_prueba.py --limpiar
-```
+El formulario tiene tres pestanas: Servicio, Refacciones y Recepcion. La tabla de refacciones aprovecha el espacio disponible y la ventana se puede maximizar. Marca Usar y ajusta cantidad y precio para cada pieza.
 
-La limpieza pide escribir **BORRAR DEMO** y trabaja dentro de una sola transacción. Solo borra las filas con los identificadores anteriores y sus registros dependientes, y restaura el inventario asignado a los servicios de prueba. Si hay datos ajenos a esta semilla enlazados a vehículos, marcas o refacciones de prueba, MySQL puede rechazar la limpieza y la transacción se revierte.
+Recepcion identifica a la persona que trae y entrega el vehiculo a la agencia; puede ser su propietario o un tercero. No representa a un empleado receptor. Toda la seccion es opcional. Si se registra informacion, queda disponible en el comprobante e historial. Al vaciar una recepcion existente se conserva el historial anterior y se muestra la recepcion actual como no registrada.
 
-> Esta acción borra los datos de prueba permanentemente. Haz un respaldo si has hecho pruebas que quieres conservar. Si cambias manualmente un identificador reservado (folio, placa, SKU, correo o marca), esa fila podría no ser identificada por la limpieza.
+Mano de obra tiene un valor inicial de 1500 para servicios nuevos y puede modificarse. El subtotal de refacciones suma solo las piezas marcadas, considerando cantidad y precio unitario. El total se calcula automaticamente como mano de obra mas subtotal, tanto en la interfaz como al guardar. El comprobante muestra el desglose.
 
-## Precauciones
+En una base anterior sin `servicios.mano_obra`, aplicar una sola vez `database/migrations/002_mano_obra.sql`. La migracion conserva los totales anteriores y obtiene su mano de obra restando las refacciones, con un minimo de cero. Los servicios historicos con total menor al subtotal conservan su importe almacenado; al editarlos se aplica la nueva regla de calculo.
 
-- Ejecutar únicamente en una **base de desarrollo/pruebas**, nunca de producción.
-- No subir `.env` ni credenciales reales al repositorio.
-- No ejecutar `docker compose down -v`: eso borraría el volumen MySQL completo, incluidos registros ajenos a este complemento.
+Los errores de guardado de administradores y servicios conservan abiertos los formularios y sus datos. Al editar un administrador, una clave vacia conserva la anterior.

@@ -9,6 +9,7 @@ import secrets
 import struct
 import uuid
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 from .database import DataAccessError, MySQLDatabase
@@ -27,7 +28,7 @@ class AgencyModel:
     CATALOGS = {
         "marcas": ("marcas", "id_marca", ("nombre",)),
         "modelos": ("modelos", "id_modelo", ("id_marca", "nombre")),
-        "anos": ("anos", "id_ano", ("ano",)),
+        "anios": ("anios", "id_anio", ("anio",)),
         "refacciones": (
             "refacciones",
             "id_refaccion",
@@ -45,13 +46,13 @@ class AgencyModel:
                 self.STATES,
             )
             for year in range(1980, date.today().year + 3):
-                cursor.execute("INSERT IGNORE INTO anos (ano) VALUES (%s)", (year,))
+                cursor.execute("INSERT IGNORE INTO anios (anio) VALUES (%s)", (year,))
             cursor.execute("SELECT COUNT(*) AS total FROM administradores")
             if cursor.fetchone()["total"] == 0:
                 if not admin_username.strip() or len(admin_password) < 8:
                     raise DataAccessError(
                         "Configura ADMIN_INITIAL_USERNAME y ADMIN_INITIAL_PASSWORD "
-                        "(mínimo 8 caracteres) en .env para el primer inicio."
+                        "(minimo 8 caracteres) en .env para el primer inicio."
                     )
                 cursor.execute(
                     """
@@ -76,7 +77,7 @@ class AgencyModel:
             )
             row = cursor.fetchone()
         if row is None or not self.verify_password(password, row["password_hash"]):
-            raise ValueError("Usuario o contraseña incorrectos.")
+            raise ValueError("Usuario o contrasena incorrectos.")
         return username
 
     @staticmethod
@@ -127,7 +128,7 @@ class AgencyModel:
     def dashboard(
         self, filter_name: str, day: str | None = None
     ) -> list[dict[str, Any]]:
-        # Strategy: las variantes encapsulan sus propias condiciones y parámetros SQL.
+        # Strategy: las variantes encapsulan sus propias condiciones y parametros SQL.
         strategy = self.DASHBOARD_STRATEGIES.get(str(filter_name).casefold())
         if strategy is None:
             raise ValueError("Filtro de dashboard desconocido.")
@@ -141,10 +142,10 @@ class AgencyModel:
             cursor.execute(
                 """
                 SELECT s.id_servicio, s.folio, s.tipo_servicio, s.descripcion,
-                       s.fecha_ingreso, s.fecha_programada, s.estado, s.costo,
+                       s.fecha_ingreso, s.fecha_programada, s.estado, s.costo, s.mano_obra,
                        v.id_vehiculo, v.placas, v.color, v.vin, v.id_marca,
-                       v.id_modelo, v.id_ano, m.nombre AS marca,
-                       mo.nombre AS modelo, a.ano, c.id_cliente, c.nombre,
+                       v.id_modelo, v.id_anio, m.nombre AS marca,
+                       mo.nombre AS modelo, a.anio, c.id_cliente, c.nombre,
                        c.apellido_paterno, c.apellido_materno, c.telefono, c.email,
                        e.nombre_entrega, e.telefono AS telefono_entrega,
                        e.relacion_propietario, e.observaciones AS observaciones_entrega,
@@ -154,7 +155,7 @@ class AgencyModel:
                 JOIN vehiculos v ON v.id_vehiculo=s.id_vehiculo
                 JOIN marcas m ON m.id_marca=v.id_marca
                 JOIN modelos mo ON mo.id_modelo=v.id_modelo
-                JOIN anos a ON a.id_ano=v.id_ano
+                JOIN anios a ON a.id_anio=v.id_anio
                 JOIN clientes c ON c.id_cliente=v.id_cliente
                 LEFT JOIN entregas e ON e.id_entrega=(
                     SELECT MAX(e2.id_entrega) FROM entregas e2
@@ -181,7 +182,7 @@ class AgencyModel:
     def service_receipt(self, folio: str) -> ServiceReceipt:
         rows = self.list_services(folio=folio)
         if not rows:
-            raise DataAccessError("No se encontró el servicio solicitado.")
+            raise DataAccessError("No se encontro el servicio solicitado.")
         return ServiceReceipt.from_records(rows[0], self.service_parts(folio))
 
     def delivery_history(self, folio: str) -> list[dict[str, Any]]:
@@ -211,20 +212,20 @@ class AgencyModel:
             return cursor.fetchall()
 
     def create_service(self, payload: dict[str, Any]) -> dict[str, str]:
-        self._validate_service(payload)
+        labor, total = self._validate_service(payload)
         folio = str(payload.get("folio") or "").strip() or (
             f"SRV-{datetime.now():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:10]}"
         )
         if len(folio) > 30:
-            raise ValueError("El folio debe tener como máximo 30 caracteres.")
+            raise ValueError("El folio debe tener como maximo 30 caracteres.")
         with self.database.session(transaction=True) as (connection, cursor):
             client_id = self._save_client(cursor, payload["cliente"])
             vehicle_id = self._save_vehicle(cursor, payload["vehiculo"], client_id)
             cursor.execute(
                 """
                 INSERT INTO servicios
-                    (folio,id_vehiculo,tipo_servicio,descripcion,estado,costo)
-                VALUES (%s,%s,%s,%s,%s,%s)
+                    (folio,id_vehiculo,tipo_servicio,descripcion,estado,costo,mano_obra)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
                     folio,
@@ -232,7 +233,8 @@ class AgencyModel:
                     payload["tipoServicio"],
                     payload["descripcion"].strip(),
                     payload["estado"],
-                    payload["costo"],
+                    total,
+                    labor,
                 ),
             )
             self._save_service_relations(
@@ -241,7 +243,7 @@ class AgencyModel:
         return {"folio": folio}
 
     def update_service(self, folio: str, payload: dict[str, Any]) -> None:
-        self._validate_service(payload)
+        labor, total = self._validate_service(payload)
         with self.database.session(transaction=True) as (_, cursor):
             cursor.execute(
                 "SELECT id_servicio FROM servicios WHERE folio=%s FOR UPDATE",
@@ -249,7 +251,7 @@ class AgencyModel:
             )
             service = cursor.fetchone()
             if service is None:
-                raise DataAccessError("No se encontró el servicio solicitado.")
+                raise DataAccessError("No se encontro el servicio solicitado.")
             service_id = int(service["id_servicio"])
             client_id = self._save_client(cursor, payload["cliente"])
             vehicle_id = self._save_vehicle(cursor, payload["vehiculo"], client_id)
@@ -257,7 +259,7 @@ class AgencyModel:
                 """
                 UPDATE servicios
                 SET id_vehiculo=%s, tipo_servicio=%s, descripcion=%s,
-                    estado=%s, costo=%s
+                    estado=%s, costo=%s, mano_obra=%s
                 WHERE id_servicio=%s
                 """,
                 (
@@ -265,7 +267,8 @@ class AgencyModel:
                     payload["tipoServicio"],
                     payload["descripcion"].strip(),
                     payload["estado"],
-                    payload["costo"],
+                    total,
+                    labor,
                     service_id,
                 ),
             )
@@ -273,7 +276,7 @@ class AgencyModel:
 
     def update_service_status(self, folio: str, status: str) -> None:
         if status not in self.STATES:
-            raise ValueError("Estado inválido.")
+            raise ValueError("Estado invalido.")
         with self.database.session() as (connection, cursor):
             cursor.execute(
                 "UPDATE servicios SET estado=%s WHERE folio=%s",
@@ -282,7 +285,7 @@ class AgencyModel:
             if cursor.rowcount == 0:
                 cursor.execute("SELECT 1 FROM servicios WHERE folio=%s", (folio,))
                 if cursor.fetchone() is None:
-                    raise DataAccessError("No se encontró el servicio solicitado.")
+                    raise DataAccessError("No se encontro el servicio solicitado.")
             connection.commit()
 
     def delete_service(self, folio: str) -> None:
@@ -293,7 +296,7 @@ class AgencyModel:
             )
             service = cursor.fetchone()
             if service is None:
-                raise DataAccessError("No se encontró el servicio solicitado.")
+                raise DataAccessError("No se encontro el servicio solicitado.")
             service_id = int(service["id_servicio"])
             cursor.execute(
                 """
@@ -337,7 +340,7 @@ class AgencyModel:
         vehicles = self.list_vehicles()
         catalogs = {
             name: self.list_catalog(name)
-            for name in ("marcas", "modelos", "anos")
+            for name in ("marcas", "modelos", "anios")
         }
         return customers, vehicles, catalogs
 
@@ -386,7 +389,7 @@ class AgencyModel:
                 )
                 self._require_existing_update(
                     cursor, cursor.rowcount, "clientes", "id_cliente", customer_id,
-                    "No se encontró el cliente."
+                    "No se encontro el cliente."
                 )
             connection.commit()
 
@@ -396,7 +399,7 @@ class AgencyModel:
                 "UPDATE clientes SET activo=0 WHERE id_cliente=%s AND activo=1",
                 (customer_id,),
             )
-            self._require_existing(cursor, cursor.rowcount, "No se encontró el cliente.")
+            self._require_existing(cursor, cursor.rowcount, "No se encontro el cliente.")
             connection.commit()
 
     def list_vehicles(self) -> list[dict[str, Any]]:
@@ -405,12 +408,12 @@ class AgencyModel:
                 """
                 SELECT v.*, c.nombre, c.apellido_paterno, c.apellido_materno,
                        c.telefono, c.email, m.nombre AS marca, mo.nombre AS modelo,
-                       a.ano
+                       a.anio
                 FROM vehiculos v
                 JOIN clientes c ON c.id_cliente=v.id_cliente
                 JOIN marcas m ON m.id_marca=v.id_marca
                 JOIN modelos mo ON mo.id_modelo=v.id_modelo
-                JOIN anos a ON a.id_ano=v.id_ano
+                JOIN anios a ON a.id_anio=v.id_anio
                 WHERE v.activo=1 AND c.activo=1
                 ORDER BY v.placas
                 """
@@ -446,7 +449,7 @@ class AgencyModel:
                 cursor.execute(
                     """
                     INSERT INTO vehiculos
-                        (id_cliente,id_marca,id_modelo,id_ano,placas,color,vin)
+                        (id_cliente,id_marca,id_modelo,id_anio,placas,color,vin)
                     VALUES (%s,%s,%s,%s,%s,%s,%s)
                     """,
                     values,
@@ -455,14 +458,14 @@ class AgencyModel:
                 cursor.execute(
                     """
                     UPDATE vehiculos SET id_cliente=%s, id_marca=%s,
-                        id_modelo=%s, id_ano=%s, placas=%s, color=%s, vin=%s
+                        id_modelo=%s, id_anio=%s, placas=%s, color=%s, vin=%s
                     WHERE id_vehiculo=%s AND activo=1
                     """,
                     (*values, vehicle_id),
                 )
                 self._require_existing_update(
                     cursor, cursor.rowcount, "vehiculos", "id_vehiculo", vehicle_id,
-                    "No se encontró el vehículo."
+                    "No se encontro el vehiculo."
                 )
             connection.commit()
 
@@ -472,7 +475,7 @@ class AgencyModel:
                 "UPDATE vehiculos SET activo=0 WHERE id_vehiculo=%s AND activo=1",
                 (vehicle_id,),
             )
-            self._require_existing(cursor, cursor.rowcount, "No se encontró el vehículo.")
+            self._require_existing(cursor, cursor.rowcount, "No se encontro el vehiculo.")
             connection.commit()
 
     def list_catalog(self, catalog: str) -> list[dict[str, Any]]:
@@ -513,7 +516,7 @@ class AgencyModel:
                 )
                 self._require_existing_update(
                     cursor, cursor.rowcount, table, identifier, item_id,
-                    "No se encontró el registro."
+                    "No se encontro el registro."
                 )
             connection.commit()
 
@@ -524,7 +527,7 @@ class AgencyModel:
                 f"UPDATE `{table}` SET activo=0 WHERE `{identifier}`=%s AND activo=1",
                 (item_id,),
             )
-            self._require_existing(cursor, cursor.rowcount, "No se encontró el registro.")
+            self._require_existing(cursor, cursor.rowcount, "No se encontro el registro.")
             connection.commit()
 
     def list_admins(self) -> list[dict[str, Any]]:
@@ -547,9 +550,9 @@ class AgencyModel:
         if not name or not username:
             raise ValueError("Nombre y usuario son obligatorios.")
         if admin_id is None and (not password or len(password) < 8):
-            raise ValueError("La contraseña debe tener al menos 8 caracteres.")
+            raise ValueError("La contrasena debe tener al menos 8 caracteres.")
         if password and len(password) < 8:
-            raise ValueError("La contraseña debe tener al menos 8 caracteres.")
+            raise ValueError("La contrasena debe tener al menos 8 caracteres.")
         with self.database.session(transaction=True) as (_, cursor):
             if admin_id is not None and not active:
                 self._ensure_another_active_admin(cursor, admin_id)
@@ -582,7 +585,7 @@ class AgencyModel:
                     )
                 self._require_existing_update(
                     cursor, cursor.rowcount, "administradores", "id_administrador",
-                    admin_id, "No se encontró el administrador.", active_only=False,
+                    admin_id, "No se encontro el administrador.", active_only=False,
                 )
 
     def delete_admin(self, admin_id: int) -> None:
@@ -592,7 +595,7 @@ class AgencyModel:
                 "DELETE FROM administradores WHERE id_administrador=%s",
                 (admin_id,),
             )
-            self._require_existing(cursor, cursor.rowcount, "No se encontró el administrador.")
+            self._require_existing(cursor, cursor.rowcount, "No se encontro el administrador.")
 
     @staticmethod
     def _validate_vin(value: Any) -> str:
@@ -601,7 +604,7 @@ class AgencyModel:
             alphabet = "ABCDEFGHJKLMOPRSTUVWXYZ0123456789"
             return "".join(secrets.choice(alphabet) for _ in range(17))
         if re.fullmatch(r"[A-HJ-MO-PR-Z0-9]{17}", vin) is None:
-            raise ValueError("El VIN debe tener 17 caracteres alfanuméricos, sin I, N ni Q.")
+            raise ValueError("El VIN debe tener 17 caracteres alfanumericos, sin I, N ni Q.")
         return vin
 
     def _save_client(self, cursor: Any, payload: dict[str, Any]) -> int:
@@ -649,7 +652,7 @@ class AgencyModel:
     ) -> int:
         vin = self._validate_vin(payload.get("vin"))
         if not str(payload.get("placas") or "").strip():
-            raise ValueError("Se requieren las placas del vehículo.")
+            raise ValueError("Se requieren las placas del vehiculo.")
         cursor.execute(
             """
             SELECT COUNT(*) AS total FROM modelos
@@ -673,7 +676,7 @@ class AgencyModel:
             cursor.execute(
                 """
                 INSERT INTO vehiculos
-                    (id_cliente,id_marca,id_modelo,id_ano,placas,color,vin)
+                    (id_cliente,id_marca,id_modelo,id_anio,placas,color,vin)
                 VALUES (%s,%s,%s,%s,%s,%s,%s)
                 """,
                 values,
@@ -682,7 +685,7 @@ class AgencyModel:
         cursor.execute(
             """
             UPDATE vehiculos SET id_cliente=%s, id_marca=%s, id_modelo=%s,
-                id_ano=%s, placas=%s, color=%s, vin=%s
+                id_anio=%s, placas=%s, color=%s, vin=%s
             WHERE id_vehiculo=%s AND activo=1
             """,
             (*values, vehicle_id),
@@ -693,7 +696,7 @@ class AgencyModel:
                 (vehicle_id,),
             )
             if cursor.fetchone() is None:
-                raise ValueError("El vehículo seleccionado ya no existe.")
+                raise ValueError("El vehiculo seleccionado ya no existe.")
         return int(vehicle_id)
 
     def _save_service_relations(
@@ -724,7 +727,7 @@ class AgencyModel:
             )
             if cursor.rowcount == 0:
                 raise ValueError(
-                    "No hay inventario suficiente para una refacción seleccionada."
+                    "No hay inventario suficiente para una refaccion seleccionada."
                 )
             cursor.execute(
                 """
@@ -739,31 +742,31 @@ class AgencyModel:
                     part["precioUnitario"],
                 ),
             )
-        delivery = payload["entrega"]
-        deliverer = str(delivery.get("nombre") or "").strip()
-        if not deliverer:
-            raise ValueError("Se requiere identificar a la persona que entrega el vehículo.")
-        cursor.execute(
-            """SELECT nombre_entrega, telefono, relacion_propietario, observaciones
-               FROM entregas WHERE id_servicio=%s
-               ORDER BY id_entrega DESC LIMIT 1""",
-            (service_id,),
-        )
-        last_delivery = cursor.fetchone()
-        delivery_values = (
-            deliverer, delivery.get("telefono"), delivery.get("relacionPropietario"),
-            delivery.get("observaciones"),
-        )
-        if last_delivery is None or delivery_values != tuple(
-            last_delivery.get(key) for key in
-            ("nombre_entrega", "telefono", "relacion_propietario", "observaciones")
-        ):
+        delivery = payload.get("entrega")
+        if delivery is not None:
             cursor.execute(
-                """INSERT INTO entregas
-                   (id_servicio,nombre_entrega,telefono,relacion_propietario,observaciones)
-                   VALUES (%s,%s,%s,%s,%s)""",
-                (service_id, *delivery_values),
+                """SELECT nombre_entrega, telefono, relacion_propietario, observaciones
+                   FROM entregas WHERE id_servicio=%s
+                   ORDER BY id_entrega DESC LIMIT 1""",
+                (service_id,),
             )
+            last_delivery = cursor.fetchone()
+            delivery_values = (
+                str(delivery.get("nombre") or "").strip(),
+                *(str(delivery.get(key) or "").strip() or None
+                  for key in ("telefono", "relacionPropietario", "observaciones")),
+            )
+            previous = None if last_delivery is None else tuple(
+                last_delivery.get(key) for key in
+                ("nombre_entrega", "telefono", "relacion_propietario", "observaciones")
+            )
+            if delivery_values != previous and (last_delivery is not None or any(delivery_values)):
+                cursor.execute(
+                    """INSERT INTO entregas
+                       (id_servicio,nombre_entrega,telefono,relacion_propietario,observaciones)
+                       VALUES (%s,%s,%s,%s,%s)""",
+                    (service_id, *delivery_values),
+                )
         cursor.execute(
             "DELETE FROM proximos_servicios WHERE id_servicio=%s", (service_id,)
         )
@@ -805,7 +808,7 @@ class AgencyModel:
             ("administradores", "id_administrador"),
             ("marcas", "id_marca"),
             ("modelos", "id_modelo"),
-            ("anos", "id_ano"),
+            ("anios", "id_anio"),
             ("refacciones", "id_refaccion"),
         }
         if (table, identifier) not in allowed:
@@ -828,22 +831,44 @@ class AgencyModel:
         try:
             return cls.CATALOGS[catalog]
         except KeyError as error:
-            raise ValueError("Catálogo desconocido.") from error
+            raise ValueError("Catalogo desconocido.") from error
 
     @classmethod
-    def _validate_service(cls, payload: dict[str, Any]) -> None:
+    def _validate_service(cls, payload: dict[str, Any]) -> tuple[Decimal, Decimal]:
         if not str(payload.get("descripcion") or "").strip():
-            raise ValueError("La descripción es obligatoria.")
+            raise ValueError("La descripcion es obligatoria.")
         if payload.get("tipoServicio") not in ("Preventivo", "Correctivo"):
             raise ValueError("El tipo de servicio debe ser Preventivo o Correctivo.")
         if payload.get("estado") not in cls.STATES:
             raise ValueError("El estado debe ser En espera, En proceso o Finalizado.")
-        if float(payload.get("costo") or 0) < 0:
-            raise ValueError("El costo no puede ser negativo.")
         if not isinstance(payload.get("cliente"), dict):
             raise ValueError("Se requiere el propietario.")
         if not isinstance(payload.get("vehiculo"), dict):
-            raise ValueError("Se requiere el vehículo.")
-        if not isinstance(payload.get("entrega"), dict):
-            raise ValueError("Se requiere identificar a la persona que entrega el vehículo.")
+            raise ValueError("Se requiere el vehiculo.")
+        if payload.get("entrega") is not None and not isinstance(payload["entrega"], dict):
+            raise ValueError("Los datos de recepcion no son validos.")
+        return cls._service_amounts(payload)
+
+    @staticmethod
+    def _service_amounts(payload: dict[str, Any]) -> tuple[Decimal, Decimal]:
+        def money(value: Any, label: str) -> Decimal:
+            try:
+                amount = Decimal(str(value))
+                if not amount.is_finite() or not Decimal("0") <= amount <= Decimal("9999999999.99"):
+                    raise ValueError(f"{label} debe ser un importe valido y no negativo.")
+                return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            except (InvalidOperation, TypeError) as error:
+                raise ValueError(f"{label} debe ser un importe valido.") from error
+
+        labor = money(payload.get("manoObra", "1500.00"), "La mano de obra")
+        total = labor
+        for part in payload.get("refacciones") or []:
+            try:
+                quantity = Decimal(str(part["cantidad"]))
+                if not quantity.is_finite() or not 0 < quantity <= 2_000_000_000 or quantity != quantity.to_integral_value():
+                    raise ValueError("La cantidad de cada refaccion debe ser un entero positivo.")
+            except (InvalidOperation, TypeError) as error:
+                raise ValueError("La cantidad de cada refaccion no es valida.") from error
+            total += quantity * money(part["precioUnitario"], "El precio de la refaccion")
+        return labor, money(total, "El total del servicio")
 

@@ -4,7 +4,7 @@ digraph "Agencia - UML" {
 	edge [arrowsize=0.7 color="#607c99" fontname=Arial fontsize=9]
 	Provider [label="{DatabaseProvider (Singleton)|_instance: DatabaseProvider\l_database: MySQLDatabase\l|__new__()\ldatabase\l}"]
 	Database [label="{MySQLDatabase|settings: dict\l|connect()\lsession()\ltranslate_error()\l}"]
-	Model [label="{AgencyModel|database: MySQLDatabase\lDASHBOARD_STRATEGIES\l|authenticate()\lcreate_service()\lupdate_service()\ldashboard()\lCRUD clientes, catálogos y vehículos\l}"]
+	Model [label="{AgencyModel|database: MySQLDatabase\lDASHBOARD_STRATEGIES\l|authenticate()\lcreate_service()\lupdate_service()\ldashboard()\lCRUD clientes, catalogos y vehiculos\l}"]
 	Strategy [label="{DashboardQueryStrategy (ABC)|+build(day)\l}"]
 	Total [label="{TotalDashboardStrategy|+build(day)\l}"]
 	Daily [label="{DailyDashboardStrategy|+build(day)\l}"]

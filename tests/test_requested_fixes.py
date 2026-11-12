@@ -71,7 +71,7 @@ class RequestedFixTests(unittest.TestCase):
     def test_vin_rejects_missing_length_symbols_and_forbidden_letters(self):
         for vin in ("A" * 16, "A" * 18, "A" * 16 + "-",
                     "A" * 16 + "I", "A" * 16 + "N", "A" * 16 + "Q",
-                    "A" * 16 + "ñ", "A" * 16 + " "):
+                    "A" * 16 + "\u00f1", "A" * 16 + " "):
             with self.subTest(vin=vin), self.assertRaises(ValueError):
                 AgencyModel._validate_vin(vin)
 
@@ -114,7 +114,7 @@ class DatabaseSessionTests(unittest.TestCase):
         with patch.object(database, "connect", return_value=connection):
             with self.assertRaises(DataAccessError):
                 with database.session():
-                    self.fail("No debe abrir la sesión")
+                    self.fail("No debe abrir la sesion")
         connection.close.assert_called_once()
 
     def test_cursor_close_failure_still_closes_connection(self):

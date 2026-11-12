@@ -4,7 +4,6 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
@@ -13,23 +12,24 @@ from models import AgencyModel, DataAccessError
 from models.provider import DatabaseProvider
 from views.main_window import LoginDialog, MainWindow
 from views.theme import apply_theme
+from configuration import ConfigurationError, load_project_env
 
 """"
 Fragmento central de arranque
 """
 def main() -> int:
-    load_dotenv(Path(__file__).resolve().parent / ".env")
     application = QApplication(sys.argv)
-    application.setApplicationName("Agencia de Automóviles")
+    application.setApplicationName("Agencia de Automoviles")
     apply_theme(application)
     application.setFont(QFont("Segoe UI", 10))
-    model = AgencyModel(DatabaseProvider().database)
     try:
+        load_project_env()
+        model = AgencyModel(DatabaseProvider().database)
         model.initialize(
             os.getenv("ADMIN_INITIAL_USERNAME", "admin"),
             os.getenv("ADMIN_INITIAL_PASSWORD", ""),
         )
-    except DataAccessError as error:
+    except (DataAccessError, ConfigurationError) as error:
         QMessageBox.critical(application.activeWindow(), "Error de base de datos", str(error))
         return 1
     

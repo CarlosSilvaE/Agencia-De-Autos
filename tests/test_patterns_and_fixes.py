@@ -45,7 +45,7 @@ class DesignPatternTests(unittest.TestCase):
         cursor = Mock()
         cursor.fetchone.return_value = {'1': 1}
         AgencyModel._require_existing_update(
-            cursor, 0, 'clientes', 'id_cliente', 42, 'No se encontró.'
+            cursor, 0, 'clientes', 'id_cliente', 42, 'No se encontro.'
         )
         cursor.execute.assert_called_once()
 
@@ -54,7 +54,7 @@ class DesignPatternTests(unittest.TestCase):
         cursor.fetchone.return_value = None
         with self.assertRaises(DataAccessError):
             AgencyModel._require_existing_update(
-                cursor, 0, 'clientes', 'id_cliente', 42, 'No se encontró.'
+                cursor, 0, 'clientes', 'id_cliente', 42, 'No se encontro.'
             )
 
     def test_logout_forgets_current_admin(self):
@@ -75,11 +75,11 @@ class ReceiptDomainTests(unittest.TestCase):
     def test_receipt_includes_service_parts_owner_deliverer_and_next_date(self):
         from models.domain import ServiceReceipt
         receipt = ServiceReceipt.from_records(
-            {"folio": "S-1", "nombre": "Ana", "apellido_paterno": "López",
+            {"folio": "S-1", "nombre": "Ana", "apellido_paterno": "Lopez",
              "nombre_entrega": "Carlos", "proximo_servicio": "2026-12-05",
              "costo": "150.50", "placas": "ABC-123"},
             [{"nombre": "Filtro", "cantidad": 2, "precio_unitario": "25.00"}],
         )
         result = receipt.as_text()
-        for value in ('S-1', 'Ana López', 'Carlos', '2026-12-05', 'Filtro (x2)', '$150.50'):
+        for value in ('S-1', 'Ana Lopez', 'Carlos', '2026-12-05', 'Filtro (x2)', '$150.50'):
             self.assertIn(value, result)
