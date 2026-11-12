@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import base64
 import hashlib
 import hmac
@@ -13,20 +12,24 @@ from typing import Any
 from .database import DataAccessError, MySQLDatabase
 from .dashboard_strategy import DailyDashboardStrategy, TotalDashboardStrategy
 from .domain import ServiceReceipt
+from .schema import migrar_esquema_anio, migrar_esquema_recepcion
 
 
 class AgencyModel:
     """Domain data model backed directly by the Docker-hosted MySQL database."""
+    # Centraliza las reglas de negocio y las operaciones SQL.
 
     STATES = ("En espera", "En proceso", "Finalizado")
+    # Asocia cada filtro del dashboard con una estrategia.
     DASHBOARD_STRATEGIES = {
         "total": TotalDashboardStrategy(),
         "daily": DailyDashboardStrategy(),
     }
+    # Permite únicamente las tablas y columnas definidas aquí.
     CATALOGS = {
         "marcas": ("marcas", "id_marca", ("nombre",)),
         "modelos": ("modelos", "id_modelo", ("id_marca", "nombre")),
-        "anos": ("anos", "id_ano", ("ano",)),
+        "anio": ("anio", "id_anio", ("anio",)),
         "refacciones": (
             "refacciones",
             "id_refaccion",
@@ -35,22 +38,29 @@ class AgencyModel:
     }
 
     def __init__(self, database: MySQLDatabase) -> None:
+        # Guarda la referencia al proveedor de conexiones MySQL.
         self.database = database
 
     def initialize(self, admin_username: str, admin_password: str) -> None:
+        # Prepara los catálogos y crea el primer administrador si hace falta.
+        with self.database.session() as (connection, _):
+            # Ajusta el esquema anterior antes de las operaciones normales.
+            migrar_esquema_anio(connection)
+            migrar_esquema_recepcion(connection)
         with self.database.session(transaction=True) as (_, cursor):
             cursor.execute(
                 "INSERT IGNORE INTO estados (nombre) VALUES (%s), (%s), (%s)",
                 self.STATES,
             )
             for year in range(1980, date.today().year + 3):
-                cursor.execute("INSERT IGNORE INTO anos (ano) VALUES (%s)", (year,))
+                cursor.execute("INSERT IGNORE INTO anio (anio) VALUES (%s)", (year,))
             cursor.execute("SELECT COUNT(*) AS total FROM administradores")
+            # El administrador inicial solo se crea si todavía no hay cuentas.
             if cursor.fetchone()["total"] == 0:
                 if not admin_username.strip() or len(admin_password) < 8:
                     raise DataAccessError(
                         "Configura ADMIN_INITIAL_USERNAME y ADMIN_INITIAL_PASSWORD "
-                        "(mínimo 8 caracteres) en .env para el primer inicio."
+                        "(minimo 8 caracteres) en .env para el primer inicio."
                     )
                 cursor.execute(
                     """
@@ -65,6 +75,7 @@ class AgencyModel:
                 )
 
     def authenticate(self, username: str, password: str) -> str:
+        # Comprueba las credenciales de un administrador activo.
         with self.database.session() as (_, cursor):
             cursor.execute(
                 """
@@ -75,11 +86,13 @@ class AgencyModel:
             )
             row = cursor.fetchone()
         if row is None or not self.verify_password(password, row["password_hash"]):
-            raise ValueError("Usuario o contraseña incorrectos.")
+            raise ValueError("Usuario o contrasena incorrectos.")
         return username
 
     @staticmethod
     def hash_password(password: str) -> str:
+        # Genera un hash seguro con salt para almacenar la contraseña.
+        # El salt hace distinto el hash aunque se repita la contraseña.
         salt = secrets.token_bytes(16)
         iterations = 100_000
         subkey = hashlib.pbkdf2_hmac(
@@ -90,6 +103,7 @@ class AgencyModel:
 
     @staticmethod
     def verify_password(password: str, encoded_hash: str) -> bool:
+        # Compara la contraseña con el hash almacenado.
         try:
             payload = base64.b64decode(encoded_hash, validate=True)
             if not payload:
@@ -126,7 +140,9 @@ class AgencyModel:
     def dashboard(
         self, filter_name: str, day: str | None = None
     ) -> list[dict[str, Any]]:
-        # Strategy: las variantes encapsulan sus propias condiciones y parámetros SQL.
+        # Strategy: las variantes encapsulan sus propias condiciones y parametros SQL.
+        # Elige la estrategia total o diaria y ejecuta su SQL.
+        # Strategy decide cómo consultar los datos según el filtro.
         strategy = self.DASHBOARD_STRATEGIES.get(str(filter_name).casefold())
         if strategy is None:
             raise ValueError("Filtro de dashboard desconocido.")
@@ -136,14 +152,16 @@ class AgencyModel:
             return cursor.fetchall()
 
     def list_services(self, folio: str = "", owner: str = "") -> list[dict[str, Any]]:
+        # Consulta servicios con cliente, vehículo, entrega y próximo servicio.
         with self.database.session() as (_, cursor):
             cursor.execute(
                 """
                 SELECT s.id_servicio, s.folio, s.tipo_servicio, s.descripcion,
+                       s.recibido_por, s.tercero_recoge,
                        s.fecha_ingreso, s.fecha_programada, s.estado, s.costo,
                        v.id_vehiculo, v.placas, v.color, v.vin, v.id_marca,
-                       v.id_modelo, v.id_ano, m.nombre AS marca,
-                       mo.nombre AS modelo, a.ano, c.id_cliente, c.nombre,
+                       v.id_modelo, v.id_anio, m.nombre AS marca,
+                       mo.nombre AS modelo, a.anio, c.id_cliente, c.nombre,
                        c.apellido_paterno, c.apellido_materno, c.telefono, c.email,
                        e.nombre_entrega, e.telefono AS telefono_entrega,
                        e.relacion_propietario, e.observaciones AS observaciones_entrega,
@@ -153,7 +171,7 @@ class AgencyModel:
                 JOIN vehiculos v ON v.id_vehiculo=s.id_vehiculo
                 JOIN marcas m ON m.id_marca=v.id_marca
                 JOIN modelos mo ON mo.id_modelo=v.id_modelo
-                JOIN anos a ON a.id_ano=v.id_ano
+                JOIN anio a ON a.id_anio=v.id_anio
                 JOIN clientes c ON c.id_cliente=v.id_cliente
                 LEFT JOIN entregas e ON e.id_entrega=(
                     SELECT MAX(e2.id_entrega) FROM entregas e2
@@ -175,15 +193,18 @@ class AgencyModel:
     def service_options(
         self,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        # Devuelve las opciones requeridas al crear un servicio.
         return self.list_vehicles(), self.list_catalog("refacciones")
 
     def service_receipt(self, folio: str) -> ServiceReceipt:
+        # Construye el objeto con los datos del comprobante.
         rows = self.list_services(folio=folio)
         if not rows:
-            raise DataAccessError("No se encontró el servicio solicitado.")
+            raise DataAccessError("No se encontro el servicio solicitado.")
         return ServiceReceipt.from_records(rows[0], self.service_parts(folio))
 
     def delivery_history(self, folio: str) -> list[dict[str, Any]]:
+        # Obtiene el historial de personas que entregaron el vehículo.
         with self.database.session() as (_, cursor):
             cursor.execute(
                 """SELECT e.fecha, e.nombre_entrega, e.telefono,
@@ -195,6 +216,7 @@ class AgencyModel:
             return cursor.fetchall()
 
     def service_parts(self, folio: str) -> list[dict[str, Any]]:
+        # Consulta las refacciones y cantidades de un servicio.
         with self.database.session() as (_, cursor):
             cursor.execute(
                 """
@@ -210,18 +232,18 @@ class AgencyModel:
             return cursor.fetchall()
 
     def create_service(self, payload: dict[str, Any]) -> dict[str, str]:
+        # Valida y registra el servicio junto con sus datos relacionados.
         self._validate_service(payload)
-        folio = payload.get("folio") or (
-            f"SRV-{datetime.utcnow():%Y%m%d%H%M%S%f}-{uuid.uuid4().hex[:6]}"
-        )
+        # Genera un folio si el usuario no proporcionó uno.
+        folio = str(payload.get("folio") or "").strip() or f"SRV-{uuid.uuid4().hex[:26]}"
         with self.database.session(transaction=True) as (connection, cursor):
             client_id = self._save_client(cursor, payload["cliente"])
             vehicle_id = self._save_vehicle(cursor, payload["vehiculo"], client_id)
             cursor.execute(
                 """
                 INSERT INTO servicios
-                    (folio,id_vehiculo,tipo_servicio,descripcion,estado,costo)
-                VALUES (%s,%s,%s,%s,%s,%s)
+                    (folio,id_vehiculo,tipo_servicio,descripcion,estado,costo,recibido_por,tercero_recoge)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
                     folio,
@@ -230,6 +252,8 @@ class AgencyModel:
                     payload["descripcion"].strip(),
                     payload["estado"],
                     payload["costo"],
+                    payload.get("recibidoPor"),
+                    payload.get("terceroRecoge"),
                 ),
             )
             self._save_service_relations(
@@ -238,6 +262,7 @@ class AgencyModel:
         return {"folio": folio}
 
     def update_service(self, folio: str, payload: dict[str, Any]) -> None:
+        # Modifica un servicio existente sin perder las relaciones.
         self._validate_service(payload)
         with self.database.session(transaction=True) as (_, cursor):
             cursor.execute(
@@ -246,7 +271,7 @@ class AgencyModel:
             )
             service = cursor.fetchone()
             if service is None:
-                raise DataAccessError("No se encontró el servicio solicitado.")
+                raise DataAccessError("No se encontro el servicio solicitado.")
             service_id = int(service["id_servicio"])
             client_id = self._save_client(cursor, payload["cliente"])
             vehicle_id = self._save_vehicle(cursor, payload["vehiculo"], client_id)
@@ -254,7 +279,7 @@ class AgencyModel:
                 """
                 UPDATE servicios
                 SET id_vehiculo=%s, tipo_servicio=%s, descripcion=%s,
-                    estado=%s, costo=%s
+                    estado=%s, costo=%s, recibido_por=%s, tercero_recoge=%s
                 WHERE id_servicio=%s
                 """,
                 (
@@ -263,26 +288,31 @@ class AgencyModel:
                     payload["descripcion"].strip(),
                     payload["estado"],
                     payload["costo"],
+                    payload.get("recibidoPor"),
+                    payload.get("terceroRecoge"),
                     service_id,
                 ),
             )
             self._save_service_relations(cursor, service_id, payload)
 
     def update_service_status(self, folio: str, status: str) -> None:
+        # Cambia el estado y comprueba que el folio exista.
         if status not in self.STATES:
-            raise ValueError("Estado inválido.")
+            raise ValueError("Estado invalido.")
         with self.database.session() as (connection, cursor):
             cursor.execute(
                 "UPDATE servicios SET estado=%s WHERE folio=%s",
                 (status, folio),
             )
+            # Un UPDATE sin cambios puede afectar cero filas sin ser un error.
             if cursor.rowcount == 0:
                 cursor.execute("SELECT 1 FROM servicios WHERE folio=%s", (folio,))
                 if cursor.fetchone() is None:
-                    raise DataAccessError("No se encontró el servicio solicitado.")
+                    raise DataAccessError("No se encontro el servicio solicitado.")
             connection.commit()
 
     def delete_service(self, folio: str) -> None:
+        # Elimina un servicio y devuelve sus refacciones al inventario.
         with self.database.session(transaction=True) as (_, cursor):
             cursor.execute(
                 "SELECT id_servicio FROM servicios WHERE folio=%s",
@@ -290,7 +320,7 @@ class AgencyModel:
             )
             service = cursor.fetchone()
             if service is None:
-                raise DataAccessError("No se encontró el servicio solicitado.")
+                raise DataAccessError("No se encontro el servicio solicitado.")
             service_id = int(service["id_servicio"])
             cursor.execute(
                 """
@@ -299,16 +329,19 @@ class AgencyModel:
                 """,
                 (service_id,),
             )
+            # Devuelve al inventario las refacciones del servicio anterior.
             for part in cursor.fetchall():
                 cursor.execute(
                     "UPDATE refacciones SET cantidad=cantidad+%s WHERE id_refaccion=%s",
                     (part["cantidad"], part["id_refaccion"]),
                 )
+            # Elimina primero las relaciones para respetar las claves foráneas.
             for table in ("servicio_refaccion", "entregas", "proximos_servicios"):
                 cursor.execute(f"DELETE FROM {table} WHERE id_servicio=%s", (service_id,))
             cursor.execute("DELETE FROM servicios WHERE id_servicio=%s", (service_id,))
 
     def list_upcoming(self, folio: str = "", owner: str = "") -> list[dict[str, Any]]:
+        # Consulta próximos servicios por folio o propietario.
         with self.database.session() as (_, cursor):
             cursor.execute(
                 """
@@ -330,15 +363,17 @@ class AgencyModel:
     def customer_vehicle_data(
         self,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+        # Agrupa clientes, vehículos y catálogos para la interfaz.
         customers = self.list_customers()
         vehicles = self.list_vehicles()
         catalogs = {
             name: self.list_catalog(name)
-            for name in ("marcas", "modelos", "anos")
+            for name in ("marcas", "modelos", "anio")
         }
         return customers, vehicles, catalogs
 
     def list_customers(self) -> list[dict[str, Any]]:
+        # Obtiene solamente clientes activos.
         with self.database.session() as (_, cursor):
             cursor.execute(
                 """
@@ -351,6 +386,7 @@ class AgencyModel:
     def save_customer(
         self, payload: dict[str, Any], customer_id: int | None = None
     ) -> None:
+        # Inserta o modifica los datos de un cliente.
         if not payload.get("nombre", "").strip() or not payload.get(
             "apellidoPaterno", ""
         ).strip():
@@ -363,6 +399,7 @@ class AgencyModel:
             payload.get("email"),
         )
         with self.database.session() as (connection, cursor):
+            # Si no hay ID, crea el cliente; de lo contrario, lo actualiza.
             if customer_id is None:
                 cursor.execute(
                     """
@@ -383,31 +420,33 @@ class AgencyModel:
                 )
                 self._require_existing_update(
                     cursor, cursor.rowcount, "clientes", "id_cliente", customer_id,
-                    "No se encontró el cliente."
+                    "No se encontro el cliente."
                 )
             connection.commit()
 
     def delete_customer(self, customer_id: int) -> None:
+        # Desactiva el cliente sin borrarlo físicamente.
         with self.database.session() as (connection, cursor):
             cursor.execute(
                 "UPDATE clientes SET activo=0 WHERE id_cliente=%s AND activo=1",
                 (customer_id,),
             )
-            self._require_existing(cursor, cursor.rowcount, "No se encontró el cliente.")
+            self._require_existing(cursor, cursor.rowcount, "No se encontro el cliente.")
             connection.commit()
 
     def list_vehicles(self) -> list[dict[str, Any]]:
+        # Lista vehículos activos con sus datos relacionados.
         with self.database.session() as (_, cursor):
             cursor.execute(
                 """
                 SELECT v.*, c.nombre, c.apellido_paterno, c.apellido_materno,
                        c.telefono, c.email, m.nombre AS marca, mo.nombre AS modelo,
-                       a.ano
+                       a.anio
                 FROM vehiculos v
                 JOIN clientes c ON c.id_cliente=v.id_cliente
                 JOIN marcas m ON m.id_marca=v.id_marca
                 JOIN modelos mo ON mo.id_modelo=v.id_modelo
-                JOIN anos a ON a.id_ano=v.id_ano
+                JOIN anio a ON a.id_anio=v.id_anio
                 WHERE v.activo=1 AND c.activo=1
                 ORDER BY v.placas
                 """
@@ -417,6 +456,7 @@ class AgencyModel:
     def save_vehicle(
         self, payload: dict[str, Any], vehicle_id: int | None = None
     ) -> None:
+        # Valida marca y modelo antes de guardar el vehículo.
         if not payload.get("placas", "").strip():
             raise ValueError("Las placas son obligatorias.")
         with self.database.session() as (connection, cursor):
@@ -427,22 +467,24 @@ class AgencyModel:
                 """,
                 (payload["idModelo"], payload["idMarca"]),
             )
+            # El administrador inicial solo se crea si todavía no hay cuentas.
             if cursor.fetchone()["total"] == 0:
                 raise ValueError("El modelo seleccionado no pertenece a la marca.")
             values = (
                 payload["idCliente"],
                 payload["idMarca"],
                 payload["idModelo"],
-                payload["idAno"],
+                payload["idAnio"],
                 payload["placas"].strip(),
                 payload.get("color"),
                 payload.get("vin"),
             )
+            # Si no hay ID, crea el vehículo; de lo contrario, lo actualiza.
             if vehicle_id is None:
                 cursor.execute(
                     """
                     INSERT INTO vehiculos
-                        (id_cliente,id_marca,id_modelo,id_ano,placas,color,vin)
+                        (id_cliente,id_marca,id_modelo,id_anio,placas,color,vin)
                     VALUES (%s,%s,%s,%s,%s,%s,%s)
                     """,
                     values,
@@ -451,27 +493,29 @@ class AgencyModel:
                 cursor.execute(
                     """
                     UPDATE vehiculos SET id_cliente=%s, id_marca=%s,
-                        id_modelo=%s, id_ano=%s, placas=%s, color=%s, vin=%s
+                        id_modelo=%s, id_anio=%s, placas=%s, color=%s, vin=%s
                     WHERE id_vehiculo=%s AND activo=1
                     """,
                     (*values, vehicle_id),
                 )
                 self._require_existing_update(
                     cursor, cursor.rowcount, "vehiculos", "id_vehiculo", vehicle_id,
-                    "No se encontró el vehículo."
+                    "No se encontro el vehiculo."
                 )
             connection.commit()
 
     def delete_vehicle(self, vehicle_id: int) -> None:
+        # Desactiva un vehículo sin eliminar su fila.
         with self.database.session() as (connection, cursor):
             cursor.execute(
                 "UPDATE vehiculos SET activo=0 WHERE id_vehiculo=%s AND activo=1",
                 (vehicle_id,),
             )
-            self._require_existing(cursor, cursor.rowcount, "No se encontró el vehículo.")
+            self._require_existing(cursor, cursor.rowcount, "No se encontro el vehiculo.")
             connection.commit()
 
     def list_catalog(self, catalog: str) -> list[dict[str, Any]]:
+        # Consulta un catálogo permitido y sus registros activos.
         table, identifier, _ = self._catalog_definition(catalog)
         with self.database.session() as (_, cursor):
             cursor.execute(
@@ -485,6 +529,7 @@ class AgencyModel:
         payload: dict[str, Any],
         item_id: int | None = None,
     ) -> None:
+        # Aplica altas o cambios a un catálogo permitido.
         table, identifier, fields = self._catalog_definition(catalog)
         for field in fields:
             value = payload.get(field)
@@ -493,6 +538,7 @@ class AgencyModel:
                     continue
                 raise ValueError(f"El campo {field} es obligatorio.")
         with self.database.session() as (connection, cursor):
+            # Decide entre insertar un catálogo nuevo o editar el existente.
             if item_id is None:
                 names = ", ".join(f"`{field}`" for field in fields)
                 placeholders = ", ".join(["%s"] * len(fields))
@@ -509,21 +555,23 @@ class AgencyModel:
                 )
                 self._require_existing_update(
                     cursor, cursor.rowcount, table, identifier, item_id,
-                    "No se encontró el registro."
+                    "No se encontro el registro."
                 )
             connection.commit()
 
     def delete_catalog_item(self, catalog: str, item_id: int) -> None:
+        # Desactiva una fila de catálogo sin borrarla.
         table, identifier, _ = self._catalog_definition(catalog)
         with self.database.session() as (connection, cursor):
             cursor.execute(
                 f"UPDATE `{table}` SET activo=0 WHERE `{identifier}`=%s AND activo=1",
                 (item_id,),
             )
-            self._require_existing(cursor, cursor.rowcount, "No se encontró el registro.")
+            self._require_existing(cursor, cursor.rowcount, "No se encontro el registro.")
             connection.commit()
 
     def list_admins(self) -> list[dict[str, Any]]:
+        # Lista las cuentas administrativas registradas.
         with self.database.session() as (_, cursor):
             cursor.execute(
                 """
@@ -536,6 +584,7 @@ class AgencyModel:
     def save_admin(
         self, payload: dict[str, Any], admin_id: int | None = None
     ) -> None:
+        # Valida y guarda administradores con contraseña protegida.
         name = str(payload.get("nombre") or "").strip()
         username = str(payload.get("usuario") or "").strip()
         password = payload.get("password")
@@ -543,9 +592,9 @@ class AgencyModel:
         if not name or not username:
             raise ValueError("Nombre y usuario son obligatorios.")
         if admin_id is None and (not password or len(password) < 8):
-            raise ValueError("La contraseña debe tener al menos 8 caracteres.")
+            raise ValueError("La contrasena debe tener al menos 8 caracteres.")
         if password and len(password) < 8:
-            raise ValueError("La contraseña debe tener al menos 8 caracteres.")
+            raise ValueError("La contrasena debe tener al menos 8 caracteres.")
         with self.database.session(transaction=True) as (_, cursor):
             if admin_id is not None and not active:
                 self._ensure_another_active_admin(cursor, admin_id)
@@ -578,10 +627,11 @@ class AgencyModel:
                     )
                 self._require_existing_update(
                     cursor, cursor.rowcount, "administradores", "id_administrador",
-                    admin_id, "No se encontró el administrador.", active_only=False,
+                    admin_id, "No se encontro el administrador.", active_only=False,
                 )
 
     def delete_admin(self, admin_id: int) -> None:
+        # Desactiva un administrador sin dejar al sistema sin acceso.
         with self.database.session(transaction=True) as (_, cursor):
             self._ensure_another_active_admin(cursor, admin_id)
             cursor.execute(
@@ -591,9 +641,10 @@ class AgencyModel:
                 """,
                 (admin_id,),
             )
-            self._require_existing(cursor, cursor.rowcount, "No se encontró el administrador.")
+            self._require_existing(cursor, cursor.rowcount, "No se encontro el administrador.")
 
     def _save_client(self, cursor: Any, payload: dict[str, Any]) -> int:
+        # Crea o actualiza el propietario y devuelve su identificador.
         name = str(payload.get("nombre") or "").strip()
         surname = str(payload.get("apellidoPaterno") or "").strip()
         if not name or not surname:
@@ -624,6 +675,7 @@ class AgencyModel:
             """,
             (*values, client_id),
         )
+        # Un UPDATE sin cambios puede afectar cero filas sin ser un error.
         if cursor.rowcount == 0:
             cursor.execute(
                 "SELECT 1 FROM clientes WHERE id_cliente=%s AND activo=1",
@@ -636,8 +688,9 @@ class AgencyModel:
     def _save_vehicle(
         self, cursor: Any, payload: dict[str, Any], client_id: int
     ) -> int:
+        # Crea o actualiza el vehículo y devuelve su identificador.
         if not str(payload.get("placas") or "").strip():
-            raise ValueError("Se requieren las placas del vehículo.")
+            raise ValueError("Se requieren las placas del vehiculo.")
         cursor.execute(
             """
             SELECT COUNT(*) AS total FROM modelos
@@ -645,23 +698,25 @@ class AgencyModel:
             """,
             (payload["idModelo"], payload["idMarca"]),
         )
+        # El administrador inicial solo se crea si todavía no hay cuentas.
         if cursor.fetchone()["total"] == 0:
             raise ValueError("El modelo seleccionado no pertenece a la marca.")
         values = (
             client_id,
             payload["idMarca"],
             payload["idModelo"],
-            payload["idAno"],
+            payload["idAnio"],
             payload["placas"].strip(),
             payload.get("color"),
             payload.get("vin"),
         )
         vehicle_id = payload.get("id")
+        # Si no hay ID, crea el vehículo; de lo contrario, lo actualiza.
         if vehicle_id is None:
             cursor.execute(
                 """
                 INSERT INTO vehiculos
-                    (id_cliente,id_marca,id_modelo,id_ano,placas,color,vin)
+                    (id_cliente,id_marca,id_modelo,id_anio,placas,color,vin)
                 VALUES (%s,%s,%s,%s,%s,%s,%s)
                 """,
                 values,
@@ -670,27 +725,30 @@ class AgencyModel:
         cursor.execute(
             """
             UPDATE vehiculos SET id_cliente=%s, id_marca=%s, id_modelo=%s,
-                id_ano=%s, placas=%s, color=%s, vin=%s
+                id_anio=%s, placas=%s, color=%s, vin=%s
             WHERE id_vehiculo=%s AND activo=1
             """,
             (*values, vehicle_id),
         )
+        # Un UPDATE sin cambios puede afectar cero filas sin ser un error.
         if cursor.rowcount == 0:
             cursor.execute(
                 "SELECT 1 FROM vehiculos WHERE id_vehiculo=%s AND activo=1",
                 (vehicle_id,),
             )
             if cursor.fetchone() is None:
-                raise ValueError("El vehículo seleccionado ya no existe.")
+                raise ValueError("El vehiculo seleccionado ya no existe.")
         return int(vehicle_id)
 
     def _save_service_relations(
         self, cursor: Any, service_id: int, payload: dict[str, Any]
     ) -> None:
+        # Sincroniza refacciones, entregas y próximo mantenimiento.
         cursor.execute(
             "SELECT id_refaccion, cantidad FROM servicio_refaccion WHERE id_servicio=%s",
             (service_id,),
         )
+        # Devuelve al inventario las refacciones del servicio anterior.
         for part in cursor.fetchall():
             cursor.execute(
                 "UPDATE refacciones SET cantidad=cantidad+%s WHERE id_refaccion=%s",
@@ -710,9 +768,10 @@ class AgencyModel:
                 """,
                 (quantity, part["idRefaccion"], quantity),
             )
+            # Un UPDATE sin cambios puede afectar cero filas sin ser un error.
             if cursor.rowcount == 0:
                 raise ValueError(
-                    "No hay inventario suficiente para una refacción seleccionada."
+                    "No hay inventario suficiente para una refaccion seleccionada."
                 )
             cursor.execute(
                 """
@@ -727,10 +786,8 @@ class AgencyModel:
                     part["precioUnitario"],
                 ),
             )
-        delivery = payload["entrega"]
+        delivery = payload.get("entrega") or {}
         deliverer = str(delivery.get("nombre") or "").strip()
-        if not deliverer:
-            raise ValueError("Se requiere identificar a la persona que entrega el vehículo.")
         cursor.execute(
             """SELECT nombre_entrega, telefono, relacion_propietario, observaciones
                FROM entregas WHERE id_servicio=%s
@@ -742,10 +799,11 @@ class AgencyModel:
             deliverer, delivery.get("telefono"), delivery.get("relacionPropietario"),
             delivery.get("observaciones"),
         )
-        if last_delivery is None or delivery_values != tuple(
+        # Conserva el historial si cambian los datos de entrega.
+        if (last_delivery is not None or any(delivery_values)) and (last_delivery is None or delivery_values != tuple(
             last_delivery.get(key) for key in
             ("nombre_entrega", "telefono", "relacion_propietario", "observaciones")
-        ):
+        )):
             cursor.execute(
                 """INSERT INTO entregas
                    (id_servicio,nombre_entrega,telefono,relacion_propietario,observaciones)
@@ -772,6 +830,7 @@ class AgencyModel:
             )
 
     def _ensure_another_active_admin(self, cursor: Any, admin_id: int) -> None:
+        # Evita desactivar al último administrador activo.
         cursor.execute(
             "SELECT id_administrador FROM administradores WHERE activo=1 FOR UPDATE"
         )
@@ -784,6 +843,7 @@ class AgencyModel:
         cursor: Any, affected: int, table: str, identifier: str, item_id: int,
         message: str, active_only: bool = True,
     ) -> None:
+        # Distingue un registro inexistente de una edición sin cambios.
         if affected:
             return
         # Los nombres provienen exclusivamente de las constantes internas (allowlist).
@@ -793,7 +853,7 @@ class AgencyModel:
             ("administradores", "id_administrador"),
             ("marcas", "id_marca"),
             ("modelos", "id_modelo"),
-            ("anos", "id_ano"),
+            ("anio", "id_anio"),
             ("refacciones", "id_refaccion"),
         }
         if (table, identifier) not in allowed:
@@ -808,20 +868,23 @@ class AgencyModel:
 
     @staticmethod
     def _require_existing(cursor: Any, affected: int, message: str) -> None:
+        # Rechaza operaciones sobre registros inexistentes.
         if affected == 0:
             raise DataAccessError(message)
 
     @classmethod
     def _catalog_definition(cls, catalog: str) -> tuple[str, str, tuple[str, ...]]:
+        # Restringe las tablas y columnas a catálogos permitidos.
         try:
             return cls.CATALOGS[catalog]
         except KeyError as error:
-            raise ValueError("Catálogo desconocido.") from error
+            raise ValueError("Catalogo desconocido.") from error
 
     @classmethod
     def _validate_service(cls, payload: dict[str, Any]) -> None:
+        # Comprueba los datos obligatorios y las reglas de servicio.
         if not str(payload.get("descripcion") or "").strip():
-            raise ValueError("La descripción es obligatoria.")
+            raise ValueError("La descripcion es obligatoria.")
         if payload.get("tipoServicio") not in ("Preventivo", "Correctivo"):
             raise ValueError("El tipo de servicio debe ser Preventivo o Correctivo.")
         if payload.get("estado") not in cls.STATES:
@@ -831,7 +894,10 @@ class AgencyModel:
         if not isinstance(payload.get("cliente"), dict):
             raise ValueError("Se requiere el propietario.")
         if not isinstance(payload.get("vehiculo"), dict):
-            raise ValueError("Se requiere el vehículo.")
-        if not isinstance(payload.get("entrega"), dict):
-            raise ValueError("Se requiere identificar a la persona que entrega el vehículo.")
+            raise ValueError("Se requiere el vehiculo.")
+        if len(str(payload.get("folio") or "").strip()) > 30:
+            raise ValueError("El folio admite como maximo 30 caracteres.")
+        for key in ("recibidoPor", "terceroRecoge"):
+            if len(str(payload.get(key) or "")) > 150:
+                raise ValueError("El nombre admite como maximo 150 caracteres.")
 

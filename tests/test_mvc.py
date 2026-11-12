@@ -8,17 +8,21 @@ from models import AgencyModel
 
 
 class MvcFlowTests(unittest.TestCase):
+    # Comprueba que MVC delega las operaciones y valida los datos.
     def setUp(self) -> None:
+        # Crea un modelo simulado para aislar las pruebas.
         self.model = Mock(spec=AgencyModel)
         self.controllers = AgencyControllers.from_model(self.model)
 
     def test_authentication_controller_delegates_to_model(self) -> None:
+        # Comprueba la delegación del inicio de sesión.
         self.model.authenticate.return_value = "admin"
 
         self.assertEqual(self.controllers.auth.login("admin", "secret"), "admin")
         self.model.authenticate.assert_called_once_with("admin", "secret")
 
     def test_service_controller_delegates_queries_and_updates(self) -> None:
+        # Comprueba operaciones de servicios desde el controlador.
         self.model.list_services.return_value = [{"folio": "SRV-1"}]
         self.model.service_options.return_value = ([{"id_vehiculo": 1}], [])
 
@@ -35,6 +39,7 @@ class MvcFlowTests(unittest.TestCase):
         self.model.delete_service.assert_called_once_with("SRV-1")
 
     def test_catalog_controller_delegates_mutations(self) -> None:
+        # Comprueba las operaciones del catálogo.
         self.controllers.catalogs.save("marcas", {"nombre": "Toyota"})
         self.controllers.catalogs.save("marcas", {"nombre": "Honda"}, 3)
         self.controllers.catalogs.delete("marcas", 3)
@@ -49,6 +54,7 @@ class MvcFlowTests(unittest.TestCase):
         self.model.delete_catalog_item.assert_called_once_with("marcas", 3)
 
     def test_password_hash_round_trip_and_rejects_wrong_password(self) -> None:
+        # Comprueba que los hashes aceptan la contraseña correcta.
         password_hash = AgencyModel.hash_password("correct horse battery staple")
 
         self.assertTrue(
@@ -58,6 +64,7 @@ class MvcFlowTests(unittest.TestCase):
         self.assertFalse(AgencyModel.verify_password("incorrect", "not-base64"))
 
     def test_service_validation_and_catalog_allowlist(self) -> None:
+        # Comprueba las validaciones y catálogos permitidos.
         payload = {
             "descripcion": "Cambio de aceite",
             "tipoServicio": "Preventivo",

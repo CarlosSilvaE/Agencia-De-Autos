@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication, QPushButton
 
 
 def apply_theme(application: QApplication) -> None:
+    # Aplica los estilos generales de la aplicación Qt.
     application.setStyle("Fusion")
 
     palette = application.palette()
@@ -198,6 +199,7 @@ def apply_theme(application: QApplication) -> None:
 
 
 def set_primary_button(button: QPushButton) -> None:
+    # Marca un botón como acción principal del formulario.
     button.setProperty("primary", True)
     button.style().unpolish(button)
     button.style().polish(button)

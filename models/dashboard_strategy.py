@@ -6,12 +6,16 @@ from datetime import date
 
 class DashboardQueryStrategy(ABC):
     @abstractmethod
+    # Strategy: establece cómo construir una consulta del dashboard.
     def build(self, day: str | None = None) -> tuple[str, tuple]:
-        """Devuelve SQL parametrizado y sus parámetros."""
+        """Devuelve SQL parametrizado y sus parametros."""
+        # Define el contrato para devolver SQL y parámetros.
 
 
 class TotalDashboardStrategy(DashboardQueryStrategy):
+    # Genera el resumen general sin filtrar por fecha.
     def build(self, day: str | None = None) -> tuple[str, tuple]:
+        # Cuenta los servicios de cada estado sin filtro diario.
         return ("""
             SELECT e.nombre AS estado, COUNT(s.id_servicio) AS cantidad
             FROM estados e
@@ -22,10 +26,13 @@ class TotalDashboardStrategy(DashboardQueryStrategy):
 
 
 class DailyDashboardStrategy(DashboardQueryStrategy):
+    # Genera el resumen de servicios para una fecha concreta.
     def build(self, day: str | None = None) -> tuple[str, tuple]:
+        # Valida la fecha y filtra servicios mediante un parámetro SQL.
         if not day:
-            raise ValueError("Selecciona una fecha para consultar servicios por día.")
+            raise ValueError("Selecciona una fecha para consultar servicios por dia.")
         try:
+            # Valida el formato de la fecha antes de construir la consulta.
             date.fromisoformat(day)
         except ValueError as error:
             raise ValueError("La fecha debe tener el formato AAAA-MM-DD.") from error
