@@ -52,3 +52,19 @@ Los tests comprueban la delegación MVC, hashes, Strategy, Singleton, logout y e
 ## Seguridad y distribución
 
 El ZIP **no contiene `.env`, `.git`, credenciales reales ni entornos virtuales**. Genera tus propias contraseñas en `.env` y nunca publiques el archivo. Si el ZIP original incluía contraseñas utilizables, cámbialas en el entorno real. Usa una cuenta MySQL con permisos adecuados para la práctica.
+
+## VIN y actualización de bases existentes
+
+En Clientes y vehículos, dejar el VIN vacío genera un identificador de 17
+caracteres. Si se escribe, debe tener 17 caracteres alfanuméricos sin I, N ni Q;
+se guarda en mayúsculas. El valor generado es un identificador de la aplicación,
+no un VIN asignado por el fabricante. Para vehículos reales, introducir su VIN.
+
+Los folios automáticos caben en el límite SQL de 30 caracteres. Administradores
+permite eliminar definitivamente una cuenta, protegiendo al último activo;
+la casilla Activo de Editar permite seguir desactivando sin eliminar.
+
+Si una base anterior usa `anio`, `id_anio` y `anio` como columna del año,
+revisar `database/migrations/001_normalizar_anos.sql` antes de iniciar. Aplicarlo
+solo una vez, con respaldo y aplicaciones cerradas; no ejecutarlo sobre una base
+que ya usa `anos`. No requiere borrar el volumen de Docker.

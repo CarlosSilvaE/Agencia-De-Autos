@@ -117,7 +117,8 @@ class VehicleDialog(QDialog):
         form.addRow("Año:", self.year)
         form.addRow("Placas:", self.plates)
         form.addRow("Color:", self.color)
-        form.addRow("VIN:", self.vin)
+        self.vin.setPlaceholderText("Vacío: generar automáticamente")
+        form.addRow("VIN (opcional):", self.vin)
         layout.addLayout(form)
         add_buttons(self, layout)
         if record:

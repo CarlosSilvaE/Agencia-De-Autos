@@ -158,7 +158,7 @@ def sembrar(connection):
             id_cliente = clientes[(i - 1) % len(clientes)][0]
             id_marca, id_modelo = combinaciones[(i - 1) % len(combinaciones)]
             placas = f"{PREFIX_PLACAS}{i:04d}"
-            vin = f"DEMO-P2-VIN-{i:04d}"
+            vin = f"DEMOP2ABC{i:08d}"
             vehiculo = asegurar("vehiculos", "SELECT id_vehiculo FROM vehiculos WHERE placas=%s",
                 """INSERT INTO vehiculos
                    (id_cliente,id_marca,id_modelo,id_ano,placas,color,vin)

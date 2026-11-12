@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import struct
 import uuid
@@ -211,9 +212,11 @@ class AgencyModel:
 
     def create_service(self, payload: dict[str, Any]) -> dict[str, str]:
         self._validate_service(payload)
-        folio = payload.get("folio") or (
-            f"SRV-{datetime.utcnow():%Y%m%d%H%M%S%f}-{uuid.uuid4().hex[:6]}"
+        folio = str(payload.get("folio") or "").strip() or (
+            f"SRV-{datetime.now():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:10]}"
         )
+        if len(folio) > 30:
+            raise ValueError("El folio debe tener como máximo 30 caracteres.")
         with self.database.session(transaction=True) as (connection, cursor):
             client_id = self._save_client(cursor, payload["cliente"])
             vehicle_id = self._save_vehicle(cursor, payload["vehiculo"], client_id)
@@ -241,7 +244,7 @@ class AgencyModel:
         self._validate_service(payload)
         with self.database.session(transaction=True) as (_, cursor):
             cursor.execute(
-                "SELECT id_servicio FROM servicios WHERE folio=%s",
+                "SELECT id_servicio FROM servicios WHERE folio=%s FOR UPDATE",
                 (folio,),
             )
             service = cursor.fetchone()
@@ -285,7 +288,7 @@ class AgencyModel:
     def delete_service(self, folio: str) -> None:
         with self.database.session(transaction=True) as (_, cursor):
             cursor.execute(
-                "SELECT id_servicio FROM servicios WHERE folio=%s",
+                "SELECT id_servicio FROM servicios WHERE folio=%s FOR UPDATE",
                 (folio,),
             )
             service = cursor.fetchone()
@@ -417,6 +420,7 @@ class AgencyModel:
     def save_vehicle(
         self, payload: dict[str, Any], vehicle_id: int | None = None
     ) -> None:
+        vin = self._validate_vin(payload.get("vin"))
         if not payload.get("placas", "").strip():
             raise ValueError("Las placas son obligatorias.")
         with self.database.session() as (connection, cursor):
@@ -436,7 +440,7 @@ class AgencyModel:
                 payload["idAno"],
                 payload["placas"].strip(),
                 payload.get("color"),
-                payload.get("vin"),
+                vin,
             )
             if vehicle_id is None:
                 cursor.execute(
@@ -585,13 +589,20 @@ class AgencyModel:
         with self.database.session(transaction=True) as (_, cursor):
             self._ensure_another_active_admin(cursor, admin_id)
             cursor.execute(
-                """
-                UPDATE administradores SET activo=0
-                WHERE id_administrador=%s AND activo=1
-                """,
+                "DELETE FROM administradores WHERE id_administrador=%s",
                 (admin_id,),
             )
             self._require_existing(cursor, cursor.rowcount, "No se encontró el administrador.")
+
+    @staticmethod
+    def _validate_vin(value: Any) -> str:
+        vin = str(value or "").strip().upper()
+        if not vin:
+            alphabet = "ABCDEFGHJKLMOPRSTUVWXYZ0123456789"
+            return "".join(secrets.choice(alphabet) for _ in range(17))
+        if re.fullmatch(r"[A-HJ-MO-PR-Z0-9]{17}", vin) is None:
+            raise ValueError("El VIN debe tener 17 caracteres alfanuméricos, sin I, N ni Q.")
+        return vin
 
     def _save_client(self, cursor: Any, payload: dict[str, Any]) -> int:
         name = str(payload.get("nombre") or "").strip()
@@ -636,6 +647,7 @@ class AgencyModel:
     def _save_vehicle(
         self, cursor: Any, payload: dict[str, Any], client_id: int
     ) -> int:
+        vin = self._validate_vin(payload.get("vin"))
         if not str(payload.get("placas") or "").strip():
             raise ValueError("Se requieren las placas del vehículo.")
         cursor.execute(
@@ -654,7 +666,7 @@ class AgencyModel:
             payload["idAno"],
             payload["placas"].strip(),
             payload.get("color"),
-            payload.get("vin"),
+            vin,
         )
         vehicle_id = payload.get("id")
         if vehicle_id is None:

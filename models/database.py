@@ -35,8 +35,9 @@ class MySQLDatabase:
         self, transaction: bool = False
     ) -> Iterator[tuple[MySQLConnection, Any]]:
         connection = self.connect()
-        cursor = connection.cursor(dictionary=True)
+        cursor = None
         try:
+            cursor = connection.cursor(dictionary=True)
             if transaction:
                 connection.start_transaction()
             yield connection, cursor
@@ -51,8 +52,11 @@ class MySQLDatabase:
                 connection.rollback()
             raise
         finally:
-            cursor.close()
-            connection.close()
+            try:
+                if cursor is not None:
+                    cursor.close()
+            finally:
+                connection.close()
 
     @staticmethod
     def translate_error(error: MySQLError) -> DataAccessError:

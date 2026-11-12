@@ -758,7 +758,7 @@ class AdminsPage(QWidget):
         for title, callback in (
             ("Nuevo administrador", self.create_admin),
             ("Editar", self.edit_admin),
-            ("Desactivar", self.delete_admin),
+            ("Eliminar", self.delete_admin),
             ("Actualizar", self.refresh),
         ):
             button = QPushButton(title)
@@ -807,7 +807,12 @@ class AdminsPage(QWidget):
 
     def delete_admin(self) -> None:
         row = selected_record(self.table)
-        if row and ask_delete(self, f"el administrador {row['usuario']}"):
+        if row and QMessageBox.question(
+            self, "Eliminar administrador",
+            f"¿Deseas eliminar definitivamente al administrador {row['usuario']}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        ) == QMessageBox.StandardButton.Yes:
             try:
                 self.controller.delete(row["id_administrador"])
                 self.refresh()

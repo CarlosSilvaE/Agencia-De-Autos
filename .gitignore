@@ -5,3 +5,9 @@
 **/obj/
 .venv/
 venv/
+
+# Respaldos y archivos locales de entrega.
+backups/
+respaldos/
+*.sql.gz
+*.zip
