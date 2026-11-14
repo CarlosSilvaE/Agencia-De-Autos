@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListView,
     QMessageBox,
     QScrollArea,
     QSizePolicy,
@@ -313,6 +314,12 @@ class ServiceDialog(QDialog):
         self.tabs.addTab(delivery_page, "Recepcion (opcional)")
         form = QFormLayout()
         self.vehicle = QComboBox()
+        self.vehicle.setStyleSheet("QComboBox { combobox-popup: 0; }")
+        self.vehicle.setMaxVisibleItems(12)
+        vehicle_list = QListView(self.vehicle)
+        self.vehicle.setView(vehicle_list)
+        vehicle_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        vehicle_list.setVerticalScrollMode(QListView.ScrollMode.ScrollPerPixel)
         for item in self.vehicles:
             owner = " ".join(
                 str(item.get(key) or "")
