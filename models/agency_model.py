@@ -15,6 +15,7 @@ from typing import Any
 from .database import DataAccessError, MySQLDatabase
 from .dashboard_strategy import DailyDashboardStrategy, TotalDashboardStrategy
 from .domain import ServiceReceipt
+from .schema import migrar_esquema_anio
 
 
 class AgencyModel:
@@ -40,6 +41,8 @@ class AgencyModel:
         self.database = database
 
     def initialize(self, admin_username: str, admin_password: str) -> None:
+        with self.database.session() as (connection, _):
+            migrar_esquema_anio(connection)
         with self.database.session(transaction=True) as (_, cursor):
             cursor.execute(
                 "INSERT IGNORE INTO estados (nombre) VALUES (%s), (%s), (%s)",
@@ -440,7 +443,7 @@ class AgencyModel:
                 payload["idCliente"],
                 payload["idMarca"],
                 payload["idModelo"],
-                payload["idAno"],
+                payload["idAnio"],
                 payload["placas"].strip(),
                 payload.get("color"),
                 vin,
@@ -666,7 +669,7 @@ class AgencyModel:
             client_id,
             payload["idMarca"],
             payload["idModelo"],
-            payload["idAno"],
+            payload["idAnio"],
             payload["placas"].strip(),
             payload.get("color"),
             vin,

@@ -75,6 +75,28 @@ def fill_table(table: QTableWidget, rows: list[dict[str, Any]], columns: list[st
             table.setItem(row_index, column_index, item)
 
 
+def apply_table_search(
+    table: QTableWidget,
+    text: str,
+    columns: list[int] | None = None
+) -> None:
+    search = text.strip().casefold()
+
+    for row in range(table.rowCount()):
+        if columns is None:
+            indexes = range(table.columnCount())
+        else:
+            indexes = columns
+
+        found = any(
+            search in (table.item(row, col).text().casefold()
+                       if table.item(row, col) else "")
+            for col in indexes
+        )
+
+        table.setRowHidden(row, not found if search else False)
+
+
 def selected_record(table: QTableWidget) -> dict[str, Any] | None:
     row = table.currentRow()
     if row < 0 or table.item(row, 0) is None:
@@ -562,6 +584,12 @@ class CustomersVehiclesPage(QWidget):
         }
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h3>Clientes</h3>"))
+        self.customer_search = QLineEdit()
+        self.customer_search.setPlaceholderText(
+            "Buscar cliente por nombre, apellido, teléfono o email..."
+            )
+        layout.addWidget(self.customer_search)
+        
         customer_actions = QHBoxLayout()
         for title, callback in (
             ("Nuevo cliente", self.create_customer),
@@ -595,6 +623,9 @@ class CustomersVehiclesPage(QWidget):
             self, ["ID", "Placas", "Propietario", "Marca", "Modelo", "Anio", "Color", "VIN"]
         )
         layout.addWidget(self.vehicles, 2)
+        self.vehicle_search.textChanged.connect(
+            lambda text: apply_table_search(self.vehicles, text)
+            )
         self.refresh()
 
     def refresh(self) -> None:
@@ -699,6 +730,9 @@ class CatalogsPage(QWidget):
         for key, (title, _, _) in self.CATALOGS.items():
             self.catalog.addItem(title, key)
         controls.addWidget(self.catalog)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Buscar en el catálogo...")
+        controls.addWidget(self.search_input)
         for title, callback in (
             ("Nuevo", self.create_item),
             ("Editar", self.edit_item),
@@ -715,6 +749,9 @@ class CatalogsPage(QWidget):
         self.table = table_for(self, [""])
         layout.addWidget(self.table)
         self.catalog.currentIndexChanged.connect(self.refresh)
+        self.search_input.textChanged.connect(
+            lambda text: apply_table_search(self.table, text)
+            )
         self.refresh()
 
     def refresh(self) -> None:
@@ -727,6 +764,7 @@ class CatalogsPage(QWidget):
             self.table.setColumnCount(len(keys) + 1)
             self.table.setHorizontalHeaderLabels(["ID", *keys])
             fill_table(self.table, self.rows, [self.CATALOGS[key][1], *keys])
+            apply_table_search(self.table, self.search_input.text())
         except (DataAccessError, ValueError) as error:
             show_error(self, error)
 

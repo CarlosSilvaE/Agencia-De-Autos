@@ -61,7 +61,7 @@ Usa `.venv` en lugar de `venv` si corresponde. Los datos tienen identificadores 
 ## Pruebas
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
 Los tests comprueban la delegacion MVC, hashes, Strategy, Singleton, logout y ediciones sin cambios. **No sustituyen** las pruebas manuales de formularios contra MySQL: seguir los 12 pasos en `docs/CUMPLIMIENTO_TAREA.md`.

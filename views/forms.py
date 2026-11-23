@@ -160,7 +160,7 @@ class VehicleDialog(QDialog):
             "idCliente": self.customer.currentData(),
             "idMarca": self.brand.currentData(),
             "idModelo": self.model.currentData(),
-            "idAno": self.year.currentData(),
+            "idAnio": self.year.currentData(),
             "placas": self.plates.text().strip(),
             "color": optional_text(self.color.text()),
             "vin": optional_text(self.vin.text()),
