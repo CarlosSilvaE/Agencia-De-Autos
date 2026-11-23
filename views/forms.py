@@ -399,6 +399,11 @@ class ServiceDialog(QDialog):
         parts_help = QLabel("Marca Usar en las refacciones necesarias y ajusta la cantidad y el precio unitario.")
         parts_help.setWordWrap(True)
         parts_layout.addWidget(parts_help)
+        self.parts_search = QLineEdit()
+        self.parts_search.setPlaceholderText("Buscar refacción por nombre o SKU...")
+        self.parts_search.setAccessibleName("Buscar refacción")
+        self.parts_search.setClearButtonEnabled(True)
+        parts_layout.addWidget(self.parts_search)
         self.parts_table = QTableWidget(len(self.parts), 4)
         self.parts_table.setHorizontalHeaderLabels(["Usar", "Refaccion", "Cantidad", "Precio unitario"])
         header = self.parts_table.horizontalHeader()
@@ -422,7 +427,8 @@ class ServiceDialog(QDialog):
             check.setCheckState(Qt.CheckState.Checked if selected else Qt.CheckState.Unchecked)
             self.parts_table.setItem(index, 0, check)
             name = QTableWidgetItem(str(part["nombre"]))
-            name.setToolTip(str(part["nombre"]))
+            sku = part.get("sku")
+            name.setToolTip(f"{name.text()}\nSKU: {sku}" if sku else name.text())
             self.parts_table.setItem(index, 1, name)
             quantity = QSpinBox()
             quantity.setRange(1, 2_000_000_000)
@@ -446,6 +452,7 @@ class ServiceDialog(QDialog):
             row_height = max(row_height, self.parts_table.cellWidget(0, 2).sizeHint().height() + 6)
         self.parts_table.verticalHeader().setDefaultSectionSize(row_height)
         parts_layout.addWidget(self.parts_table, 1)
+        self.parts_search.textChanged.connect(self.filter_parts)
         self.parts_table.itemChanged.connect(self.update_total)
         self.labor.valueChanged.connect(self.update_total)
 
@@ -518,6 +525,13 @@ class ServiceDialog(QDialog):
         if self.kind.currentText() == "Preventivo" and message is not None:
             self.description.setPlainText(message)
 
+    def filter_parts(self, text: str) -> None:
+        search = text.strip().casefold()
+        for index, part in enumerate(self.parts):
+            name = str(part["nombre"]).casefold()
+            sku = str(part.get("sku") or "").casefold()
+            self.parts_table.setRowHidden(index, search not in name and search not in sku)
+
     def update_total(self) -> None:
         subtotal = Decimal("0")
         for index in range(self.parts_table.rowCount()):
@@ -576,7 +590,7 @@ class ServiceDialog(QDialog):
                 "id": vehicle["id_vehiculo"],
                 "idMarca": vehicle["id_marca"],
                 "idModelo": vehicle["id_modelo"],
-                "idAno": vehicle["id_anio"],
+                "idAnio": vehicle["id_anio"],
                 "placas": vehicle["placas"],
                 "color": vehicle.get("color"),
                 "vin": vehicle.get("vin"),

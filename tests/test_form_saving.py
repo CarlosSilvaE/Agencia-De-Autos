@@ -9,10 +9,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox
 
-from controllers import AdminController, ServiceController
+from controllers import AdminController, CustomerVehicleController, ServiceController
 from models import AgencyModel, DataAccessError
 from views.forms import AdminDialog, ServiceDialog
-from views.main_window import AdminsPage, ServicesPage
+from views.main_window import AdminsPage, CustomersVehiclesPage, ServicesPage, selected_record
 
 
 VEHICLE = {
@@ -64,6 +64,32 @@ class FormSavingTests(unittest.TestCase):
         page = ServicesPage(controller)
         self.addCleanup(page.close)
         return page, controller
+
+    def test_customer_and_vehicle_search_survives_refresh(self):
+        controller = Mock(spec=CustomerVehicleController)
+        controller.data.return_value = (
+            [{"id_cliente": 2, "nombre": "Ana"}, {"id_cliente": 3, "nombre": "Luis"}],
+            [VEHICLE, {**VEHICLE, "id_vehiculo": 2, "placas": "MX-234"}],
+            {},
+        )
+        page = CustomersVehiclesPage(controller)
+        self.addCleanup(page.close)
+        page.vehicles.selectRow(0)
+        self.assertIsNotNone(selected_record(page.vehicles))
+        page.customer_search.setText(" ANA ")
+        page.vehicle_search.setText("mx-234")
+
+        self.assertIsNone(selected_record(page.vehicles))
+        self.assertTrue(page.customers.isRowHidden(1))
+        self.assertTrue(page.vehicles.isRowHidden(0))
+        page.refresh()
+        self.assertFalse(page.customers.isRowHidden(0))
+        self.assertTrue(page.customers.isRowHidden(1))
+        self.assertTrue(page.vehicles.isRowHidden(0))
+        self.assertFalse(page.vehicles.isRowHidden(1))
+
+        page.vehicle_search.clear()
+        self.assertFalse(page.vehicles.isRowHidden(0))
 
     def test_admin_retries_blank_and_short_password_without_losing_data(self):
         page, database, _ = self.admin_page()

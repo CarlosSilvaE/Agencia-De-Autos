@@ -5,6 +5,7 @@
 **/obj/
 .venv/
 venv/
+agencia/
 
 # Respaldos y archivos locales de entrega.
 backups/

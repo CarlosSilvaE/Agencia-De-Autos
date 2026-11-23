@@ -40,7 +40,7 @@ Usa `.venv` en lugar de `venv` si corresponde. Los datos tienen identificadores 
 
 - Login de administradores con contrasenas hasheadas, cierre de sesion, administracion de usuarios.
 - Catalogos CRUD de marcas, modelos, anios y refacciones; gestion de clientes y vehiculos.
-- Servicios: alta, modificacion, consulta por folio o propietario, tres estados, eliminacion y comprobante imprimible / PDF. Preventivo ofrece mensajes editables; Correctivo requiere descripcion manual.
+- Servicios: alta, modificacion, consulta por folio o propietario, tres estados, eliminacion y comprobante en PDF. Preventivo ofrece mensajes editables; Correctivo requiere descripcion manual.
 - Mano de obra editable con valor inicial de 1500, total automatico con refacciones y recepcion opcional. Para bases anteriores, aplicar `database/migrations/002_mano_obra.sql` una sola vez antes de iniciar esta version.
 - Control de quien entrego el vehiculo con historial de recepciones.
 - Varias refacciones por servicio y la misma refaccion en multiples servicios, con control de existencias.

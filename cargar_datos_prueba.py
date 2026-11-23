@@ -189,10 +189,10 @@ def sembrar(connection):
 
         years = []
         for year in range(2015, 2027):
-            cursor.execute("SELECT id_anio FROM anio WHERE anio=%s", (year,))
+            cursor.execute("SELECT id_anio FROM anios WHERE anio=%s", (year,))
             row = cursor.fetchone()
             if not row:
-                cursor.execute("INSERT INTO anio (anio) VALUES (%s)", (year,))
+                cursor.execute("INSERT INTO anios (anio) VALUES (%s)", (year,))
                 year_id = int(cursor.lastrowid)
             else:
                 year_id = int(row[0])

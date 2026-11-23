@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import Mock
 
 from models.database import DataAccessError
-from models.schema import migrar_esquema_anio
+from models.schema import normalize_years
 
 
 class InitialCatalogTests(unittest.TestCase):
@@ -19,18 +19,18 @@ class InitialCatalogTests(unittest.TestCase):
             PRAGMA foreign_keys=ON;
             CREATE TABLE marcas (id_marca INTEGER PRIMARY KEY, nombre TEXT UNIQUE, activo INTEGER DEFAULT 1);
             CREATE TABLE modelos (id_modelo INTEGER PRIMARY KEY, id_marca INTEGER REFERENCES marcas(id_marca), nombre TEXT, activo INTEGER DEFAULT 1);
-            CREATE TABLE anio (id_anio INTEGER PRIMARY KEY, anio INTEGER UNIQUE, activo INTEGER DEFAULT 1);
+            CREATE TABLE anios (id_anio INTEGER PRIMARY KEY, anio INTEGER UNIQUE, activo INTEGER DEFAULT 1);
             CREATE TABLE estados (id_estado INTEGER PRIMARY KEY, nombre TEXT UNIQUE, activo INTEGER DEFAULT 1);
             CREATE TABLE refacciones (id_refaccion INTEGER PRIMARY KEY, nombre TEXT, sku TEXT UNIQUE, cantidad INTEGER, precio NUMERIC, activo INTEGER DEFAULT 1);
         """)
 
     def test_seed_loads_only_catalogs_with_correct_relationships(self):
         self.db.executescript(self.seed)
-        for table, count in (("marcas", 10), ("modelos", 50), ("anio", 12), ("refacciones", 30), ("estados", 3)):
+        for table, count in (("marcas", 10), ("modelos", 50), ("anios", 12), ("refacciones", 30), ("estados", 3)):
             with self.subTest(table=table):
                 self.assertEqual(self.db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], count)
         self.assertEqual(self.db.execute("PRAGMA foreign_key_check").fetchall(), [])
-        self.assertEqual(self.db.execute("SELECT MIN(anio), MAX(anio) FROM anio").fetchone(), (2015, 2026))
+        self.assertEqual(self.db.execute("SELECT MIN(anio), MAX(anio) FROM anios").fetchone(), (2015, 2026))
 
     def test_repeating_seed_preserves_edited_price_stock_and_inactive_rows(self):
         self.db.executescript(self.seed)
@@ -54,39 +54,41 @@ class InitialCatalogTests(unittest.TestCase):
 
 
 class YearSchemaMigrationTests(unittest.TestCase):
-    def connection(self, tables, columns):
-        connection = Mock(in_transaction=False)
-        connection.cursor.return_value.fetchall.side_effect = [tables, columns]
-        return connection
+    def cursor(self, tables, columns):
+        cursor = Mock()
+        cursor.fetchall.side_effect = [
+            [{"TABLE_NAME": table} for table in tables],
+            [{"TABLE_NAME": table, "COLUMN_NAME": column} for table, column in columns],
+        ]
+        return cursor
 
     def test_legacy_names_are_renamed_without_deleting_records(self):
-        for source in ("ano", "anos", "anios"):
+        for source in ("ano", "anos", "anio", "anios"):
             with self.subTest(source=source):
-                connection = self.connection([(source,)], [(source, "id_ano"), (source, "ano"), ("vehiculos", "id_ano")])
-                migrar_esquema_anio(connection)
-                statements = [call.args[0] for call in connection.cursor.return_value.execute.call_args_list]
-                self.assertEqual(statements[-2], f"ALTER TABLE `{source}` RENAME COLUMN `id_ano` TO `id_anio`, RENAME COLUMN `ano` TO `anio`, RENAME TO `anio`")
-                self.assertEqual(statements[-1], "ALTER TABLE `vehiculos` RENAME COLUMN `id_ano` TO `id_anio`")
-                self.assertFalse(any(sql.startswith(("DELETE", "DROP", "INSERT", "UPDATE")) for sql in statements))
+                cursor = self.cursor([source], [(source, "id_ano"), (source, "ano"), ("vehiculos", "id_ano")])
+                normalize_years(cursor)
+                statements = [call.args[0] for call in cursor.execute.call_args_list]
+                rename_catalog = f"ALTER TABLE `{source}` RENAME COLUMN `id_ano` TO `id_anio`, RENAME COLUMN `ano` TO `anio`"
+                if source != "anios":
+                    rename_catalog += ", RENAME TO `anios`"
+                self.assertEqual(statements[2:], [rename_catalog, "ALTER TABLE vehiculos RENAME COLUMN id_ano TO id_anio"])
 
     def test_current_schema_requires_no_ddl(self):
-        connection = self.connection([("anio",)], [("anio", "id_anio"), ("anio", "anio"), ("vehiculos", "id_anio")])
-        migrar_esquema_anio(connection)
-        self.assertEqual(connection.cursor.return_value.execute.call_count, 2)
+        cursor = self.cursor(["anios"], [("anios", "id_anio"), ("anios", "anio"), ("vehiculos", "id_anio")])
+        normalize_years(cursor)
+        self.assertEqual(cursor.execute.call_count, 2)
 
     def test_multiple_year_tables_fail_before_ddl(self):
-        connection = self.connection([("anos",), ("anio",)], [])
+        cursor = self.cursor(["anos", "anio"], [])
         with self.assertRaises(DataAccessError):
-            migrar_esquema_anio(connection)
-        self.assertEqual(connection.cursor.return_value.execute.call_count, 1)
-        connection.commit.assert_not_called()
+            normalize_years(cursor)
+        self.assertEqual(cursor.execute.call_count, 1)
 
-    def test_active_business_transaction_is_not_committed_by_migration(self):
-        connection = Mock(in_transaction=True)
-        with self.assertRaises(DataAccessError):
-            migrar_esquema_anio(connection)
-        connection.cursor.assert_not_called()
-        connection.commit.assert_not_called()
+    def test_partial_rename_resumes_with_vehicle_column(self):
+        cursor = self.cursor(["anios"], [("anios", "id_anio"), ("anios", "anio"), ("vehiculos", "id_ano")])
+        normalize_years(cursor)
+        self.assertEqual(cursor.execute.call_count, 3)
+        cursor.execute.assert_called_with("ALTER TABLE vehiculos RENAME COLUMN id_ano TO id_anio")
 
 
 if __name__ == "__main__":

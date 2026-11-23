@@ -51,6 +51,30 @@ class ServiceLaborTests(unittest.TestCase):
         dialog.parts_table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
         self.assertEqual(dialog.cost.value(), 1600.25)
 
+    def test_parts_search_preserves_hidden_selection_and_total(self):
+        brake_pad = {"id_refaccion": 7, "nombre": "Balata", "sku": "FRE-012", "precio": 90}
+        dialog = ServiceDialog([VEHICLE], [PART, brake_pad])
+        self.addCleanup(dialog.close)
+        dialog.parts_table.item(0, 0).setCheckState(Qt.CheckState.Checked)
+        dialog.parts_table.cellWidget(0, 2).setValue(2)
+        dialog.parts_table.cellWidget(0, 3).setValue(125.50)
+
+        dialog.parts_search.setText(" FILT ")
+        self.assertFalse(dialog.parts_table.isRowHidden(0))
+        self.assertTrue(dialog.parts_table.isRowHidden(1))
+        dialog.parts_search.setText("fre-012")
+        self.assertTrue(dialog.parts_table.isRowHidden(0))
+        self.assertFalse(dialog.parts_table.isRowHidden(1))
+        self.assertEqual(dialog.cost.value(), 1751)
+        self.assertEqual(dialog.payload()["refacciones"], [
+            {"idRefaccion": 6, "cantidad": 2, "precioUnitario": 125.50},
+        ])
+
+        dialog.parts_search.clear()
+        self.assertFalse(dialog.parts_table.isRowHidden(0))
+        self.assertFalse(dialog.parts_table.isRowHidden(1))
+        self.assertEqual(dialog.parts_table.item(0, 0).checkState(), Qt.CheckState.Checked)
+
     def test_edit_keeps_saved_zero_labor(self):
         dialog = self.dialog(
             {**VEHICLE, "mano_obra": 0, "costo": 360},

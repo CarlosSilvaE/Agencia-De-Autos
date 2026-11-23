@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtPrintSupport import QPrintDialog, QPrinter
+from PySide6.QtPrintSupport import QPrinter
 
 from controllers import (
     AdminController,
@@ -99,7 +99,7 @@ def apply_table_search(
 
 def selected_record(table: QTableWidget) -> dict[str, Any] | None:
     row = table.currentRow()
-    if row < 0 or table.item(row, 0) is None:
+    if row < 0 or table.isRowHidden(row) or table.item(row, 0) is None:
         return None
     return table.item(row, 0).data(Qt.ItemDataRole.UserRole)
 
@@ -482,23 +482,14 @@ class ReceiptDialog(QDialog):
         self.content.setPlainText(content)
         layout.addWidget(self.content)
         actions = QHBoxLayout()
-        print_button = QPushButton("Imprimir")
-        print_button.clicked.connect(self.print_receipt)
         pdf_button = QPushButton("Guardar PDF")
         pdf_button.clicked.connect(self.save_pdf)
         close_button = QPushButton("Cerrar")
         close_button.clicked.connect(self.accept)
-        actions.addWidget(print_button)
         actions.addWidget(pdf_button)
         actions.addStretch()
         actions.addWidget(close_button)
         layout.addLayout(actions)
-
-    def print_receipt(self) -> None:
-        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-        dialog = QPrintDialog(printer, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.content.print_(printer)
 
     def save_pdf(self) -> None:
         filename, _ = QFileDialog.getSaveFileName(
@@ -587,9 +578,9 @@ class CustomersVehiclesPage(QWidget):
         self.customer_search = QLineEdit()
         self.customer_search.setPlaceholderText(
             "Buscar cliente por nombre, apellido, teléfono o email..."
-            )
+        )
         layout.addWidget(self.customer_search)
-        
+
         customer_actions = QHBoxLayout()
         for title, callback in (
             ("Nuevo cliente", self.create_customer),
@@ -608,6 +599,9 @@ class CustomersVehiclesPage(QWidget):
         )
         layout.addWidget(self.customers, 1)
         layout.addWidget(QLabel("<h3>Vehiculos</h3>"))
+        self.vehicle_search = QLineEdit()
+        self.vehicle_search.setPlaceholderText("Buscar vehículo por placa, propietario, modelo o VIN...")
+        layout.addWidget(self.vehicle_search)
         vehicle_actions = QHBoxLayout()
         for title, callback in (
             ("Nuevo vehiculo", self.create_vehicle),
@@ -623,9 +617,12 @@ class CustomersVehiclesPage(QWidget):
             self, ["ID", "Placas", "Propietario", "Marca", "Modelo", "Anio", "Color", "VIN"]
         )
         layout.addWidget(self.vehicles, 2)
+        self.customer_search.textChanged.connect(
+            lambda text: apply_table_search(self.customers, text)
+        )
         self.vehicle_search.textChanged.connect(
             lambda text: apply_table_search(self.vehicles, text)
-            )
+        )
         self.refresh()
 
     def refresh(self) -> None:
@@ -651,6 +648,8 @@ class CustomersVehiclesPage(QWidget):
                 display,
                 ["id_vehiculo", "placas", "_owner", "marca", "modelo", "anio", "color", "vin"],
             )
+            apply_table_search(self.customers, self.customer_search.text())
+            apply_table_search(self.vehicles, self.vehicle_search.text())
         except (DataAccessError, ValueError) as error:
             show_error(self, error)
 
