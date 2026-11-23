@@ -333,7 +333,7 @@ class ServicesPage(QWidget):
         layout.addLayout(actions)
         self.table = table_for(
             self,
-            ["Folio", "Ingreso", "Tipo", "Estado", "Costo", "Propietario", "Vehiculo"],
+            ["Folio", "Ingreso", "Tipo", "Estado", "Mano de obra", "Total", "Propietario", "Vehiculo"],
         )
         layout.addWidget(self.table)
         self.refresh()
@@ -362,7 +362,7 @@ class ServicesPage(QWidget):
             fill_table(
                 self.table,
                 display,
-                ["folio", "fecha_ingreso", "tipo_servicio", "estado", "costo", "_owner", "_vehicle"],
+                ["folio", "fecha_ingreso", "tipo_servicio", "estado", "mano_obra", "costo", "_owner", "_vehicle"],
             )
         except (DataAccessError, ValueError) as error:
             show_error(self, error)
@@ -446,10 +446,12 @@ class ServicesPage(QWidget):
         try:
             entries = self.controller.delivery_history(record["folio"])
             text = [f"Historial de recepcion del servicio {record['folio']}", "=" * 48]
+            if not entries:
+                text.append("Sin datos de recepcion registrados.")
             for idx, row in enumerate(entries, start=1):
                 text.extend([
                     f"Registro {idx} — {row['fecha']}",
-                    f"Nombre: {row['nombre_entrega']}",
+                    f"Nombre: {row.get('nombre_entrega') or 'No registrado'}",
                     f"Telefono: {row.get('telefono') or 'Sin telefono'}",
                     f"Relacion: {row.get('relacion_propietario') or 'Sin especificar'}",
                     f"Observaciones: {row.get('observaciones') or 'Ninguna'}", "",
@@ -578,7 +580,7 @@ class CustomersVehiclesPage(QWidget):
         self.catalogs: dict[str, list[dict[str, Any]]] = {
             "marcas": [],
             "modelos": [],
-            "anio": [],
+            "anios": [],
         }
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h3>Clientes</h3>"))
@@ -605,16 +607,7 @@ class CustomersVehiclesPage(QWidget):
             self, ["ID", "Nombre", "Apellido paterno", "Apellido materno", "Telefono", "Email"]
         )
         layout.addWidget(self.customers, 1)
-        self.customer_search.textChanged.connect(
-    lambda text: apply_table_search(self.customers, text)
-    )
         layout.addWidget(QLabel("<h3>Vehiculos</h3>"))
-        self.vehicle_search = QLineEdit()
-        self.vehicle_search.setPlaceholderText(
-            "Buscar vehículo por placas, propietario, marca, modelo o VIN..."
-            )
-        layout.addWidget(self.vehicle_search)
-        
         vehicle_actions = QHBoxLayout()
         for title, callback in (
             ("Nuevo vehiculo", self.create_vehicle),
@@ -724,7 +717,7 @@ class CatalogsPage(QWidget):
     CATALOGS = {
         "marcas": ("Marcas", "id_marca", ["nombre"]),
         "modelos": ("Modelos", "id_modelo", ["id_marca", "nombre"]),
-        "anio": ("Anios", "id_anio", ["anio"]),
+        "anios": ("Anios", "id_anio", ["anio"]),
         "refacciones": ("Refacciones", "id_refaccion", ["nombre", "sku", "cantidad", "precio"]),
     }
 
@@ -817,7 +810,7 @@ class AdminsPage(QWidget):
         for title, callback in (
             ("Nuevo administrador", self.create_admin),
             ("Editar", self.edit_admin),
-            ("Desactivar", self.delete_admin),
+            ("Eliminar", self.delete_admin),
             ("Actualizar", self.refresh),
         ):
             button = QPushButton(title)
@@ -853,10 +846,7 @@ class AdminsPage(QWidget):
     def save_admin(self, row: dict[str, Any] | None = None) -> None:
         def save() -> None:
             try:
-                self.controller.save(
-                    dialog.payload(),
-                    row["id_administrador"] if row else None,
-                )
+                self.controller.save(dialog.payload(), row["id_administrador"] if row else None)
             except (DataAccessError, ValueError) as error:
                 show_error(dialog, error)
                 return
@@ -868,7 +858,12 @@ class AdminsPage(QWidget):
 
     def delete_admin(self) -> None:
         row = selected_record(self.table)
-        if row and ask_delete(self, f"el administrador {row['usuario']}"):
+        if row and QMessageBox.question(
+            self, "Eliminar administrador",
+            f"¿Deseas eliminar definitivamente al administrador {row['usuario']}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        ) == QMessageBox.StandardButton.Yes:
             try:
                 self.controller.delete(row["id_administrador"])
                 self.refresh()

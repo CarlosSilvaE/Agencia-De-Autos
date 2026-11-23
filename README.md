@@ -8,32 +8,40 @@ Necesitas **Docker Desktop** y **Python 3.10 o posterior**. Ejecuta los comandos
 
 ```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-notepad .env                  # Cambia las 3 contrasenas por valores propios
+notepad .env                  # Completa los valores o usa tu .env privado
 # Inicializa Docker Desktop antes de continuar
-.\iniciar.ps1
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe scripts/preparar_entorno.py
+.\.venv\Scripts\python.exe main.py
 ```
 
-`iniciar.ps1` prepara el entorno `venv`, inicia MySQL y abre la aplicacion de escritorio. En VS Code, selecciona **Agencia - aplicacion de escritorio** y presiona **F5**; usa el mismo entorno y prepara MySQL antes de depurar. El archivo `.env` del proyecto tiene prioridad sobre las variables heredadas de la terminal.
-
-Al iniciar se retiran los contenedores antiguos `backend` y `frontend` de este proyecto mediante `--remove-orphans`, conservando el volumen `mysql_data`. Docker ejecuta solamente MySQL; la interfaz se abre como una ventana de Windows. La direccion `http://localhost:8080` pertenecia a la version web anterior.
-
-Para preparar MySQL sin abrir la ventana: `.\iniciar.ps1 -SoloPreparar`. Para instalar o actualizar manualmente las dependencias: `.\venv\Scripts\python.exe -m pip install -r requirements.txt`.
-
-Los parametros del archivo `.env` definen la conexion. Por defecto MySQL escucha **solo en `127.0.0.1:3307`**. Si ya tienes un volumen Docker creado, `database/init.sql` **no se ejecutara nuevamente**. Al iniciar la aplicacion se renombran la tabla y las columnas antiguas de anios a `anio` e `id_anio`, conservando sus registros y relaciones. `ADMIN_INITIAL_PASSWORD` solamente se utiliza si todavia no existe ningun administrador.
+La aplicacion y el preparador usan el `.env` de la raiz con prioridad sobre variables antiguas de Windows o la terminal. Por defecto MySQL escucha **solo en `127.0.0.1:3307`**. El preparador sincroniza la cuenta MySQL, aplica las migraciones necesarias y carga los catalogos tambien en volumenes existentes. `ADMIN_INITIAL_PASSWORD` solamente se utiliza si todavia no existe ningun administrador. Consulta [el despliegue en otras maquinas](docs/DESPLIEGUE.md).
 
 Si Docker falla, revisa `docker compose ps` y `docker compose logs database`. Para detenerlo sin borrar los datos: `docker compose down`. **No uses `docker compose down -v` si quieres conservar la base de datos.**
 
 ## Catalogos iniciales
 
-`database/init.sql` incluye 10 marcas con 50 modelos reales, anios de 2015 a 2026 y 30 tipos de refacciones. El poblado solo agrega catalogos; los precios y las existencias son ejemplos, y los SKU son claves internas. El sistema mantiene ademas los tres estados de servicio necesarios para funcionar.
+El archivo `database/init.sql` incluye 10 marcas con 50 modelos, 12 anios y 30 tipos de refacciones. Los textos del poblado no usan acentos. Los precios y existencias son ejemplos; los SKU son internos.
 
-Docker carga estos datos al crear la base por primera vez. Para agregarlos a un volumen existente, consulta [la guia de catalogos](docs/GUIA_DATOS_PRUEBA.md). Repetir los INSERT no duplica registros ni reinicia precios o inventario.
+Los INSERT conservan los registros anteriores y permiten repetir la carga sin duplicar el poblado ni reiniciar el inventario. No generan clientes, vehiculos ni servicios. Consulta [la guia de carga y uso de servicios](docs/GUIA_DATOS_PRUEBA.md) para aplicar el archivo en un volumen existente.
+
+## Poblado de pruebas
+
+Para generar 100 servicios ficticios con clientes, vehiculos, recepciones y refacciones de prueba:
+
+```powershell
+.\venv\Scripts\python.exe scripts/poblar_pruebas.py
+```
+
+Usa `.venv` en lugar de `venv` si corresponde. Los datos tienen identificadores `PRB-*`, usan inventario de prueba y se conservan al repetir la carga sin duplicar registros ni descontar dos veces las mismas piezas. Consulta [los escenarios y opciones del poblado](docs/POBLADO_PRUEBAS.md).
 
 ## Modulos
 
 - Login de administradores con contrasenas hasheadas, cierre de sesion, administracion de usuarios.
 - Catalogos CRUD de marcas, modelos, anios y refacciones; gestion de clientes y vehiculos.
-- Servicios: alta, modificacion, consulta por folio o propietario, tres estados, eliminacion y comprobante imprimible / PDF.
+- Servicios: alta, modificacion, consulta por folio o propietario, tres estados, eliminacion y comprobante imprimible / PDF. Preventivo ofrece mensajes editables; Correctivo requiere descripcion manual.
+- Mano de obra editable con valor inicial de 1500, total automatico con refacciones y recepcion opcional. Para bases anteriores, aplicar `database/migrations/002_mano_obra.sql` una sola vez antes de iniciar esta version.
 - Control de quien entrego el vehiculo con historial de recepciones.
 - Varias refacciones por servicio y la misma refaccion en multiples servicios, con control de existencias.
 - Proximos servicios: fecha, kilometraje y busqueda por folio/propietario.
@@ -61,3 +69,19 @@ Los tests comprueban la delegacion MVC, hashes, Strategy, Singleton, logout y ed
 ## Seguridad y distribucion
 
 El ZIP **no contiene `.env`, `.git`, credenciales reales ni entornos virtuales**. Genera tus propias contrasenas en `.env` y nunca publiques el archivo. Si el ZIP original incluia contrasenas utilizables, cambialas en el entorno real. Usa una cuenta MySQL con permisos adecuados para la practica.
+
+## VIN y actualizacion de bases existentes
+
+En Clientes y vehiculos, dejar el VIN vacio genera un identificador de 17
+caracteres. Si se escribe, debe tener 17 caracteres alfanumericos sin I, N ni Q;
+se guarda en mayusculas. El valor generado es un identificador de la aplicacion,
+no un VIN asignado por el fabricante. Para vehiculos reales, introducir su VIN.
+
+Los folios automaticos caben en el limite SQL de 30 caracteres. Administradores
+permite eliminar definitivamente una cuenta, protegiendo al ultimo activo;
+la casilla Activo de Editar permite seguir desactivando sin eliminar.
+
+El catalogo de anios utiliza la tabla `anios`, con columnas `id_anio`, `anio`
+y `activo`. La columna `vehiculos.id_anio` referencia ese catalogo. El arranque
+no renombra tablas ni ejecuta migraciones; el preparador aplica esos cambios de forma explicita. `database/init.sql` utiliza estos
+mismos nombres para bases nuevas; no requiere borrar el volumen de Docker.

@@ -34,6 +34,7 @@ class ServiceReceipt:
     status: str
     description: str
     cost: Decimal
+    labor: Decimal
     deliverer: str
     delivery_phone: str
     relationship: str
@@ -54,19 +55,26 @@ class ServiceReceipt:
             str(service.get(part) or "") for part in
             ("nombre", "apellido_paterno", "apellido_materno")
         ).strip()
+        receipt_parts = tuple(ReceiptPart.from_record(row) for row in parts)
+        subtotal = sum((part.quantity * part.unit_price for part in receipt_parts), Decimal("0"))
+        cost = Decimal(str(service.get("costo") or 0))
+        labor = (
+            Decimal(str(service["mano_obra"])) if service.get("mano_obra") is not None
+            else max(Decimal("0"), cost - subtotal)
+        )
         return cls(
             folio=value("folio"), intake_date=value("fecha_ingreso"),
             owner=owner, owner_phone=value("telefono"),
             vehicle=" ".join(value(k, "") for k in ("anio", "marca", "modelo")).strip(),
             plates=value("placas"), kind=value("tipo_servicio"),
             status=value("estado"), description=value("descripcion"),
-            cost=Decimal(str(service.get("costo") or 0)),
+            cost=cost, labor=labor,
             deliverer=value("nombre_entrega"), delivery_phone=value("telefono_entrega"),
             relationship=value("relacion_propietario"),
             observations=value("observaciones_entrega", "Ninguna"),
             next_date=value("proximo_servicio", "No programado"),
             mileage=value("kilometraje"),
-            parts=tuple(ReceiptPart.from_record(row) for row in parts),
+            parts=receipt_parts,
         )
 
     def as_text(self) -> str:
@@ -81,7 +89,9 @@ class ServiceReceipt:
             f"Placas: {self.plates}",
             f"Servicio: {self.kind} / {self.status}",
             f"Descripcion: {self.description}",
-            f"Costo: ${self.cost:,.2f}",
+            f"Mano de obra: ${self.labor:,.2f}",
+            f"Subtotal refacciones: ${sum((part.quantity * part.unit_price for part in self.parts), Decimal('0')):,.2f}",
+            f"Total del servicio: ${self.cost:,.2f}",
             "Refacciones utilizadas:",
             *([part.describe() for part in self.parts] or ["  - Ninguna"]),
             f"Persona que entrego: {self.deliverer}",

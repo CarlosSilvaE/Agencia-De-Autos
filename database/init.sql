@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS modelos (
   FOREIGN KEY (id_marca) REFERENCES marcas(id_marca)
 );
 
-CREATE TABLE IF NOT EXISTS anio (
+CREATE TABLE IF NOT EXISTS anios (
   id_anio INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   anio SMALLINT UNSIGNED NOT NULL UNIQUE,
   activo BOOLEAN NOT NULL DEFAULT TRUE
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS vehiculos (
   FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente),
   FOREIGN KEY (id_marca) REFERENCES marcas(id_marca),
   FOREIGN KEY (id_modelo) REFERENCES modelos(id_modelo),
-  FOREIGN KEY (id_anio) REFERENCES anio(id_anio)
+  FOREIGN KEY (id_anio) REFERENCES anios(id_anio)
 );
 
 CREATE TABLE IF NOT EXISTS estados (
@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS servicios (
   fecha_programada DATE,
   estado VARCHAR(30) NOT NULL,
   costo DECIMAL(12,2) NOT NULL DEFAULT 0,
+  mano_obra DECIMAL(12,2) NOT NULL DEFAULT 1500.00,
   FOREIGN KEY (id_vehiculo) REFERENCES vehiculos(id_vehiculo),
   CHECK (estado IN ('En espera', 'En proceso', 'Finalizado'))
 );
@@ -111,11 +112,9 @@ CREATE TABLE IF NOT EXISTS proximos_servicios (
   FOREIGN KEY (id_servicio) REFERENCES servicios(id_servicio)
 );
 
--- Catalogos iniciales. Se conservan los registros, precios y existencias existentes.
+-- Catalogos iniciales. No generan clientes, vehiculos, servicios ni administradores.
 
--- Nombres de marcas y modelos reales. Precios MXN, existencias y SKU internos de ejemplo.
-
--- No se generan clientes, vehiculos, servicios ni administradores.
+-- Nombres reales. Precios MXN, existencias y SKU internos de ejemplo.
 
 START TRANSACTION;
 
@@ -264,7 +263,7 @@ JOIN marcas AS marca ON marca.nombre=seed.marca
 LEFT JOIN modelos AS existente ON existente.id_marca=marca.id_marca AND existente.nombre=seed.nombre
 WHERE existente.id_modelo IS NULL;
 
-INSERT INTO anio (anio)
+INSERT INTO anios (anio)
 SELECT seed.anio
 FROM (
   SELECT 2015 AS anio
@@ -291,7 +290,7 @@ FROM (
   UNION ALL
   SELECT 2026
 ) AS seed
-LEFT JOIN anio AS existente ON existente.anio=seed.anio
+LEFT JOIN anios AS existente ON existente.anio=seed.anio
 WHERE existente.id_anio IS NULL;
 
 INSERT INTO refacciones (nombre, sku, cantidad, precio)
@@ -360,26 +359,11 @@ FROM (
 LEFT JOIN refacciones AS existente ON existente.sku=seed.sku
 WHERE existente.id_refaccion IS NULL;
 
--- Normalizar tambien los nombres del poblado que ya existian.
--- Los literales hexadecimales identifican los caracteres UTF-8 originales.
+-- Quitar acentos de los nombres ya cargados por este poblado, conservando precios y cantidades.
 UPDATE refacciones
-SET nombre = REPLACE(
-  REPLACE(
-    REPLACE(
-      REPLACE(
-        REPLACE(nombre, X'C3A1', 'a'),
-        X'C3A9', 'e'
-      ),
-      X'C3AD', 'i'
-    ),
-    X'C3B3', 'o'
-  ),
-  X'C3BA', 'u'
-)
+SET nombre = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(nombre, X'C3A1', 'a'), X'C3A9', 'e'), X'C3AD', 'i'), X'C3B3', 'o'), X'C3BA', 'u')
 WHERE sku IN (
-  'CAT-BOS-004', 'CAT-BOS-005', 'CAT-BOS-006', 'CAT-BOS-008',
-  'CAT-BOS-009', 'CAT-BOS-013', 'CAT-BOS-014', 'CAT-GAT-002',
-  'CAT-GAT-006', 'CAT-GAT-009'
+  'CAT-BOS-001', 'CAT-BOS-002', 'CAT-BOS-003', 'CAT-BOS-004', 'CAT-BOS-005', 'CAT-BOS-006', 'CAT-BOS-007', 'CAT-BOS-008', 'CAT-BOS-009', 'CAT-BOS-010', 'CAT-BOS-011', 'CAT-BOS-012', 'CAT-BOS-013', 'CAT-BOS-014', 'CAT-BOS-015', 'CAT-BOS-016', 'CAT-BOS-017', 'CAT-BOS-018', 'CAT-BOS-019', 'CAT-BOS-020', 'CAT-GAT-001', 'CAT-GAT-002', 'CAT-GAT-003', 'CAT-GAT-004', 'CAT-GAT-005', 'CAT-GAT-006', 'CAT-GAT-007', 'CAT-GAT-008', 'CAT-GAT-009', 'CAT-GAT-010'
 );
 
 COMMIT;
