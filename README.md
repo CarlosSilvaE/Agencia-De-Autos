@@ -52,8 +52,8 @@ Usa `.venv` en lugar de `venv` si corresponde. Los datos tienen identificadores 
 - MVC: `models/`, `controllers/`, `views/`. `models/domain.py` define `ServiceReceipt` y `ReceiptPart` como objetos de dominio que construyen y dan formato al comprobante.
 - **Singleton**: `models/provider.py` (`DatabaseProvider`). Instancia de proveedor compartida; conexiones y transacciones independientes.
 - **Strategy**: `models/dashboard_strategy.py`, con dos consultas seleccionables (`TotalDashboardStrategy`, `DailyDashboardStrategy`).
-- Diagrama de clases: [`docs/diagrama_clases.png`](docs/diagrama_clases.png).
-- Diagrama de base de datos: [`docs/diagrama_bd.png`](docs/diagrama_bd.png).
+- Diagrama de clases: [SVG con zoom](docs/UML/UML_Clases_Completo.svg), [fuente PlantUML](docs/UML/UML_Clases_Completo.puml) y [guía](docs/UML/LEEME_UML.md).
+- Modelo relacional: entrega separada, pendiente de incorporar la versión actualizada de la persona encargada. El esquema de referencia es `database/init.sql`.
 - Matriz de cumplimiento y pruebas: [`docs/CUMPLIMIENTO_TAREA.md`](docs/CUMPLIMIENTO_TAREA.md).
 - Guion de exposicion: [`docs/GUION_EXPOSICION.md`](docs/GUION_EXPOSICION.md).
 - Plantilla requerida de integrantes/responsabilidades: `docs/Entrega_y_responsabilidades.docx` (**rellenar con nombres y asignaciones reales**).

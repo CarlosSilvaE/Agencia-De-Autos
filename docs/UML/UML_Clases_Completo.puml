@@ -1,0 +1,274 @@
+@startuml UML_Clases_Completo
+!theme plain
+title Agencia de Automóviles — Clases MVC, patrones y dominio
+left to right direction
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam linetype polyline
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam defaultFontSize 14
+skinparam nodesep 35
+skinparam ranksep 65
+
+package "Vista — views/" {
+  class LoginDialog {
+    + controller: AuthController
+    + username: str
+    + login(): None
+  }
+
+  class MainWindow {
+    - _auth: AuthController
+    + logout(): None
+    + closeEvent(event): None
+  }
+
+  class DashboardPage {
+    + controller: DashboardController
+    + refresh(): None
+  }
+
+  class ServicesPage {
+    + controller: ServiceController
+    + create_service(): None
+    + edit_service(): None
+    + delete_service(): None
+  }
+
+  class UpcomingPage {
+    + controller: UpcomingController
+    + refresh(): None
+  }
+
+  class CustomersVehiclesPage {
+    + controller: CustomerVehicleController
+    + save_customer(...): None
+    + save_vehicle(...): None
+  }
+
+  class CatalogsPage {
+    + controller: CatalogController
+    + save_item(...): None
+  }
+
+  class AdminsPage {
+    + controller: AdminController
+    + save_admin(...): None
+  }
+
+  class CustomerDialog {
+    + payload()
+  }
+
+  class VehicleDialog {
+    + payload()
+  }
+
+  class CatalogItemDialog {
+    + payload()
+  }
+
+  class AdminDialog {
+    + payload()
+  }
+
+  class ServiceDialog {
+    + labor: QDoubleSpinBox
+    + cost: QDoubleSpinBox
+    + parts_search: QLineEdit
+    + filter_parts(text: str): None
+    + update_total(): None
+    + apply_preventive_message(): None
+    + payload()
+  }
+
+  class ReceiptDialog {
+    + save_pdf()
+  }
+
+  class QInputDialogCompat {
+    {static} + get_item(parent, title, label, items, current): tuple[str, bool]
+  }
+
+  class StatusBarChart {
+    + set_counts()
+    + paintEvent()
+  }
+
+}
+
+package "Controlador — controllers/" {
+  class AgencyControllers <<dataclass>>  {
+    + auth: AuthController
+    + dashboard: DashboardController
+    + services: ServiceController
+    + upcoming: UpcomingController
+    + customers_vehicles: CustomerVehicleController
+    + catalogs: CatalogController
+    + admins: AdminController
+    + from_model(model): AgencyControllers
+  }
+
+  class AuthController {
+    + model: AgencyModel
+    + current_user: str | None
+    + login(username, password): str
+    + logout(): None
+  }
+
+  class DashboardController {
+    + model: AgencyModel
+    + summary(filter_name, day): list
+  }
+
+  class ServiceController {
+    + model: AgencyModel
+    + create(payload): dict
+    + update(folio, payload): None
+    + delete(folio): None
+    + receipt(folio): str
+  }
+
+  class UpcomingController {
+    + model: AgencyModel
+    + list(folio, owner): list
+  }
+
+  class CustomerVehicleController {
+    + model: AgencyModel
+    + save_customer(...): None
+    + save_vehicle(...): None
+  }
+
+  class CatalogController {
+    + model: AgencyModel
+    + list(catalog): list
+    + save(...): None
+    + delete(...): None
+  }
+
+  class AdminController {
+    + model: AgencyModel
+    + save(...): None
+    + delete(...): None
+    + list()
+  }
+
+}
+
+package "Modelo — models/" {
+  class DataAccessError <<exception>> {
+  }
+
+  class AgencyModel {
+    - _service_amounts(payload): tuple[Decimal, Decimal]
+    + database: MySQLDatabase
+    + DASHBOARD_STRATEGIES: dict
+    + dashboard(filter_name, day): list
+    + create_service(payload): dict
+    + service_receipt(folio): ServiceReceipt
+  }
+
+  class MySQLDatabase {
+    {static} + translate_error(error): DataAccessError
+    + settings: dict
+    + connect(): MySQLConnection
+    + session(transaction: bool): Iterator
+  }
+
+  class DatabaseProvider <<Singleton>>  {
+    - _instance: DatabaseProvider | None
+    - _lock: Lock
+    - _database: MySQLDatabase
+    + __new__(): DatabaseProvider
+    + database: MySQLDatabase
+  }
+
+  abstract class DashboardQueryStrategy  {
+    {abstract} + build(day: str | None): tuple[str, tuple]
+  }
+
+  class TotalDashboardStrategy {
+    + build(day): tuple[str, tuple]
+  }
+
+  class DailyDashboardStrategy {
+    + build(day): tuple[str, tuple]
+  }
+
+  class ServiceReceipt <<dataclass>>  {
+    + folio: str
+    + cost: Decimal
+    + labor: Decimal
+    + parts: tuple[ReceiptPart, ...]
+    + from_records(service, parts)
+    + as_text(): str
+  }
+
+  class ReceiptPart <<dataclass>>  {
+    + name: str
+    + quantity: int
+    + unit_price: Decimal
+    + describe(): str
+  }
+
+}
+
+LoginDialog --> AuthController
+MainWindow ..> AgencyControllers
+MainWindow *-- DashboardPage
+MainWindow *-- ServicesPage
+MainWindow *-- UpcomingPage
+MainWindow *-- CustomersVehiclesPage
+MainWindow *-- CatalogsPage
+MainWindow *-- AdminsPage
+DashboardPage --> DashboardController
+ServicesPage --> ServiceController
+UpcomingPage --> UpcomingController
+CustomersVehiclesPage --> CustomerVehicleController
+CatalogsPage --> CatalogController
+AdminsPage --> AdminController
+AgencyControllers *-- AuthController
+AgencyControllers *-- DashboardController
+AgencyControllers *-- ServiceController
+AgencyControllers *-- UpcomingController
+AgencyControllers *-- CustomerVehicleController
+AgencyControllers *-- CatalogController
+AgencyControllers *-- AdminController
+AuthController --> AgencyModel
+DashboardController --> AgencyModel
+ServiceController --> AgencyModel
+UpcomingController --> AgencyModel
+CustomerVehicleController --> AgencyModel
+CatalogController --> AgencyModel
+AdminController --> AgencyModel
+AgencyModel --> MySQLDatabase
+DatabaseProvider *-- MySQLDatabase
+AgencyModel ..> DashboardQueryStrategy : usa
+DashboardQueryStrategy <|-- TotalDashboardStrategy
+DashboardQueryStrategy <|-- DailyDashboardStrategy
+AgencyModel ..> ServiceReceipt : construye
+ServiceReceipt *-- "0..*" ReceiptPart
+DashboardPage *-- StatusBarChart
+ServicesPage ..> ServiceDialog
+ServicesPage ..> ReceiptDialog
+CustomersVehiclesPage ..> CustomerDialog
+CustomersVehiclesPage ..> VehicleDialog
+CatalogsPage ..> CatalogItemDialog
+AdminsPage ..> AdminDialog
+
+package "Configuración — configuration.py" {
+  class ConfigurationError <<exception>> {
+  }
+}
+MySQLDatabase ..> DataAccessError : traduce errores
+ServicesPage ..> QInputDialogCompat : selecciona estado
+
+legend bottom left
+  Base: main, commit e2ef677 (23-11-2026).
+  Atributos y métodos seleccionados; configuración y migraciones funcionales fuera del alcance.
+  Modelo relacional: entrega separada.
+  SVG vectorial: ampliar con zoom sin perder nitidez.
+endlegend
+@enduml
