@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtCore import QDate, Qt
+from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDateEdit,
     QDialog,
@@ -18,6 +20,8 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
+    QSlider,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -25,7 +29,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtPrintSupport import QPrinter
 
 from controllers import (
     AdminController,
@@ -38,8 +41,6 @@ from controllers import (
     UpcomingController,
 )
 from models.database import DataAccessError
-from .theme import set_primary_button
-from .status_chart import StatusBarChart
 from .forms import (
     AdminDialog,
     CatalogItemDialog,
@@ -47,6 +48,8 @@ from .forms import (
     ServiceDialog,
     VehicleDialog,
 )
+from .status_chart import StatusBarChart
+from .theme import apply_theme, set_primary_button
 
 
 def table_for(parent: QWidget, headers: list[str]) -> QTableWidget:
@@ -168,10 +171,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Agencia de Automoviles")
         self.resize(1280, 780)
         self._auth = controllers.auth
+        self._dark_mode = False
         central = QWidget()
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(22, 18, 22, 20)
-        layout.setSpacing(16)
+        layout.setContentsMargins(22, 18, 22, 14)
+        layout.setSpacing(12)
         top_bar = QWidget()
         top_bar.setObjectName("topBar")
         header = QHBoxLayout(top_bar)
@@ -190,9 +194,10 @@ class MainWindow(QMainWindow):
         header.addWidget(logout)
         layout.addWidget(top_bar)
 
+        self._dashboard_page = DashboardPage(controllers.dashboard)
         tabs = QTabWidget()
         tabs.setDocumentMode(True)
-        tabs.addTab(DashboardPage(controllers.dashboard), "Resumen")
+        tabs.addTab(self._dashboard_page, "Resumen")
         tabs.addTab(ServicesPage(controllers.services), "Servicios")
         tabs.addTab(UpcomingPage(controllers.upcoming), "Proximos servicios")
         tabs.addTab(
@@ -203,7 +208,47 @@ class MainWindow(QMainWindow):
         tabs.addTab(AdminsPage(controllers.admins), "Administradores")
         tabs.currentChanged.connect(lambda index: self._refresh_tab(tabs, index))
         layout.addWidget(tabs, 1)
+
+        bottom_bar = QHBoxLayout()
+        bottom_bar.setContentsMargins(0, 0, 0, 0)
+        bottom_bar.addStretch(1)
+
+        theme_box = QWidget()
+        theme_box.setObjectName("themeBar")
+        theme_box.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+        theme_layout = QHBoxLayout(theme_box)
+        theme_layout.setContentsMargins(12, 6, 12, 6)
+        theme_layout.setSpacing(8)
+        theme_layout.setSizeConstraint(QHBoxLayout.SizeConstraint.SetFixedSize)
+
+        self._theme_slider = QSlider(Qt.Orientation.Horizontal)
+        self._theme_slider.setRange(0, 1)
+        self._theme_slider.setSingleStep(1)
+        self._theme_slider.setPageStep(1)
+        self._theme_slider.setFixedWidth(46)
+        self._theme_slider.setValue(0)
+        self._theme_slider.valueChanged.connect(self._on_theme_slider_changed)
+
+        self._theme_label = QLabel("Tema claro")
+        self._theme_label.setVisible(False)
+
+        theme_layout.addWidget(self._theme_slider)
+        theme_layout.addWidget(self._theme_label)
+
+        bottom_bar.addWidget(theme_box, 0, Qt.AlignmentFlag.AlignRight)
+        layout.addLayout(bottom_bar)
+
         self.setCentralWidget(central)
+
+    def _on_theme_slider_changed(self, value: int) -> None:
+        self._dark_mode = bool(value)
+        self._theme_label.setText("Tema oscuro" if self._dark_mode else "Tema claro")
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, dark=self._dark_mode)
+        if hasattr(self._dashboard_page, "chart"):
+            self._dashboard_page.chart.set_dark_mode(self._dark_mode)
 
     @staticmethod
     def _refresh_tab(tabs: QTabWidget, index: int) -> None:

@@ -3,8 +3,14 @@
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication, QPushButton
 
+from .dark_theme import apply_dark_theme
 
-def apply_theme(application: QApplication) -> None:
+
+def apply_theme(application: QApplication, dark: bool = False) -> None:
+    if dark:
+        apply_dark_theme(application)
+        return
+
     application.setStyle("Fusion")
 
     palette = application.palette()
